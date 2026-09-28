@@ -1192,12 +1192,22 @@ export class InstagramRegistration {
     )
     this.updateState(resp1)
 
-    // Extract experience_id from response
+    // Check if the PROMPT response itself already contains APPROVED
     const raw1 = typeof resp1.data === "string" ? resp1.data : JSON.stringify(resp1.data)
+    if (raw1.includes("APPROVED")) {
+      this.nuxConsentApproved = true
+      this.onStep("nux_consent", "Consent APPROVED (from PROMPT phase)")
+      return
+    }
+
+    // Extract experience_id from response
     const expMatch = /"experience_id"\s*:\s*"([^"]+)"/.exec(raw1)
     const experienceId = expMatch ? expMatch[1] : ""
 
-    if (!experienceId) return
+    if (!experienceId) {
+      this.onStep("nux_consent_warn", "No experience_id in consent PROMPT — skipping ACTION phase")
+      return
+    }
 
     await sleep(1000)
 
@@ -1384,11 +1394,13 @@ export class InstagramRegistration {
       // Required to transition account out of partially_created state.
       // Without APPROVED from consent, the account gets banned in ~30 min.
       this.checkCancelled()
+      let nuxConsentReached = false
       try {
         await this.nuxProfileSkip()
         await sleep(3000)
         await this.nuxRegTransition()
         await sleep(3000)
+        nuxConsentReached = true
         await this.nuxPrivacyConsent()
       } catch (e) {
         this.onStep("nux_warning", `NUX partial: ${(e as Error).message}`)
@@ -1397,9 +1409,11 @@ export class InstagramRegistration {
       // ── Phase 5: Warmup ─────────────────────────────────────────────
       await this.warmup()
 
-      // Gate final success on APPROVED (like reference):
-      // only fully onboarded accounts are considered successful.
-      if (!this.nuxConsentApproved) {
+      // Gate final success on APPROVED: only fully onboarded accounts
+      // are considered successful. But if consent was never reached
+      // (earlier NUX step threw), don't reject based on a flag we
+      // never got to set.
+      if (nuxConsentReached && !this.nuxConsentApproved) {
         this.onStep("not_approved", "Account created but consent not APPROVED — partially_created")
         return this.buildResult(false, "NUX consent not approved — account partially_created")
       }

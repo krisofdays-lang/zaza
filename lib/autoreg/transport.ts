@@ -536,7 +536,7 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
 export function createClient(proxyUrl?: string): AxiosInstance {
   const agent = buildProxyAgent(proxyUrl || "")
   return axios.create({
-    timeout: 30_000,
+    timeout: 60_000,
     maxRedirects: 0,
     validateStatus: () => true, // don't throw on non-2xx
     ...(agent ? { httpsAgent: agent, httpAgent: agent } : {}),

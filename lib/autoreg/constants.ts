@@ -184,5 +184,5 @@ export const STEP_DELAY_MIN_MS = 8_000
 export const STEP_DELAY_MAX_MS = 22_000
 
 // Verification code polling.
-export const CODE_WAIT_TIMEOUT_MS = 60_000
+export const CODE_WAIT_TIMEOUT_MS = 120_000
 export const CODE_POLL_INTERVAL_MS = 3_000
