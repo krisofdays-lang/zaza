@@ -533,7 +533,13 @@ export class InstagramRegistration {
 
   private async stepDelay() {
     const ms = STEP_DELAY_MIN_MS + Math.random() * (STEP_DELAY_MAX_MS - STEP_DELAY_MIN_MS)
-    await sleep(ms)
+    const chunk = 500
+    let waited = 0
+    while (waited < ms) {
+      if (this.cancelled) throw new Error("Registration cancelled")
+      await sleep(Math.min(chunk, ms - waited))
+      waited += chunk
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -1051,17 +1057,41 @@ export class InstagramRegistration {
       throw new Error(restriction)
     }
 
-    // Extract ig_user_id from response
+    // Extract ig_user_id from response (multiple patterns like reference)
     const raw = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data)
-    const uidMatch = /"user_id"\s*:\s*"?(\d+)"?/.exec(raw)
-    if (uidMatch) this.igUserId = uidMatch[1]
+    const unescaped = raw.replace(/\\\\/g, "\\").replace(/\\"/g, '"').replace(/\\\//g, "/")
 
-    // Also try from ds_user_id if not found
+    // created_user pk (reference pattern)
+    if (!this.igUserId) {
+      for (const text of [raw, unescaped]) {
+        const m = /"created_user"\s*:\s*\{[^}]*?"pk"\s*:\s*"?(\d+)"?/.exec(text)
+        if (m) { this.igUserId = m[1]; break }
+      }
+    }
+    // user_id / pk / ds_user_id generic patterns
+    if (!this.igUserId) {
+      const m = /"(?:pk|user_id|ds_user_id)"\s*:\s*"?(\d{6,})"?/.exec(raw)
+      if (m) this.igUserId = m[1]
+    }
+    // Escaped pk pattern
+    if (!this.igUserId) {
+      const m = /\\"pk\\"\s*:\s*\\?"?(\d{6,})\\?"/.exec(raw)
+      if (m) this.igUserId = m[1]
+    }
+    // Fallback to ds_user_id from headers/cookies
     if (!this.igUserId && this.dsUserId) {
       this.igUserId = this.dsUserId
     }
 
-    if (!this.bearer && !this.igUserId) {
+    // Check for signs of success (like reference: ds_user_id, sessionid, account_created in body)
+    const hasSuccessIndicator = raw.includes("ds_user_id") ||
+      raw.includes("sessionid") ||
+      raw.includes("account_created") ||
+      raw.includes("created_user") ||
+      !!this.bearer ||
+      !!this.igUserId
+
+    if (!hasSuccessIndicator) {
       throw new Error("Account creation failed — no bearer token or user_id in response")
     }
   }

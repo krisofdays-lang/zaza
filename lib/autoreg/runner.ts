@@ -18,6 +18,7 @@ export interface AutoregJobConfig {
 interface RunningJob {
   jobId: string
   cancel: () => void
+  activeRegs: Set<InstagramRegistration>
 }
 
 // Only one job at a time
@@ -41,16 +42,19 @@ export async function startAutoregJob(config: AutoregJobConfig): Promise<string>
     config: {
       proxies: config.proxies,
       groupLabel: config.groupLabel || "",
-      // Don't store API keys in the config blob
     },
   })
 
   let cancelled = false
-  const cancelFn = () => { cancelled = true }
-  currentJob = { jobId, cancel: cancelFn }
+  const activeRegs = new Set<InstagramRegistration>()
+  const cancelFn = () => {
+    cancelled = true
+    for (const reg of activeRegs) reg.cancel()
+  }
+  currentJob = { jobId, cancel: cancelFn, activeRegs }
 
   // Run in background (fire and forget)
-  runJob(jobId, config, () => cancelled).catch(console.error).finally(() => {
+  runJob(jobId, config, () => cancelled, activeRegs).catch(console.error).finally(() => {
     if (currentJob?.jobId === jobId) currentJob = null
   })
 
@@ -74,6 +78,7 @@ async function runJob(
   jobId: string,
   config: AutoregJobConfig,
   isCancelled: () => boolean,
+  activeRegs: Set<InstagramRegistration>,
 ) {
   let completed = 0
   let failed = 0
@@ -114,6 +119,7 @@ async function runJob(
             },
             config.groupLabel || "",
             isCancelled,
+            activeRegs,
           ).then((success) => {
             if (success) completed++
             else failed++
@@ -174,6 +180,7 @@ async function runSingleRegistration(
   regConfig: RegConfig,
   groupLabel: string,
   isCancelled: () => boolean,
+  activeRegs: Set<InstagramRegistration>,
 ): Promise<boolean> {
   // Create log entry
   const [logRow] = await db
@@ -206,6 +213,9 @@ async function runSingleRegistration(
       .where(eq(igAutoregLogs.id, logId))
     return false
   }
+
+  activeRegs.add(reg)
+  if (isCancelled()) reg.cancel()
 
   try {
     const result = await reg.run()
@@ -281,15 +291,19 @@ async function runSingleRegistration(
       return false
     }
   } catch (err) {
+    const msg = (err as Error).message
+    const wasCancelled = msg === "Registration cancelled" || isCancelled()
     await db
       .update(igAutoregLogs)
       .set({
-        status: "error",
-        error: (err as Error).message,
+        status: wasCancelled ? "cancelled" : "error",
+        error: wasCancelled ? "Cancelled" : msg,
         finishedAt: new Date(),
       })
       .where(eq(igAutoregLogs.id, logId))
 
     return false
+  } finally {
+    activeRegs.delete(reg)
   }
 }

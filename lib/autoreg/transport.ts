@@ -459,9 +459,17 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
     }
   }
 
-  // Mid from ig-set-x-mid
+  // Mid from ig-set-x-mid header or cookie
   const mid = h["ig-set-x-mid"]
   if (mid) result.mid = String(mid)
+  if (!result.mid) {
+    const cookies = h["set-cookie"]
+    if (cookies) {
+      const cs = Array.isArray(cookies) ? cookies.join("; ") : String(cookies)
+      const mm = /\bmid=([^;]+)/.exec(cs)
+      if (mm) result.mid = mm[1]
+    }
+  }
 
   // www-claim: header first, then response body
   const claim = h["x-ig-set-www-claim"]
