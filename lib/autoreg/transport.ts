@@ -445,7 +445,7 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
   const result: AuthCapture = {}
 
   const raw = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data ?? "")
-  const unescaped = raw.replace(/\\"/g, '"').replace(/\\\\/g, "\\")
+  const unescaped = raw.replace(/\\\\/g, "\\").replace(/\\"/g, '"').replace(/\\\//g, "/")
 
   // Bearer token: header first, then response body (escaped bloks payload)
   const auth = h["ig-set-authorization"]
@@ -483,6 +483,7 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
   if (!result.dsUserId) {
     const dsPatterns = [
       /"(?:pk|user_id|ds_user_id)"\s*:\s*"?(\d{6,})"?/,
+      /\(eud\s+(\d{6,})\)/,
       /ds_user_id["\\s:=]+(\d{6,})/,
     ]
     for (const pat of dsPatterns) {
