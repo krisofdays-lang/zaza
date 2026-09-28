@@ -214,27 +214,33 @@ export function commonHeaders(ctx: HeadersContext): Record<string, string> {
   const headers: Record<string, string> = {
     "user-agent": ctx.userAgent,
     "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-    "accept": "*/*",
-    "accept-encoding": "gzip, deflate",
     "accept-language": ctx.geo.acceptLanguage,
-    "x-ig-app-locale": ctx.geo.language,
-    "x-ig-device-locale": ctx.geo.locale.replace("_", "-"),
-    "x-ig-mapped-locale": ctx.geo.locale,
+    "ig-intended-user-id": ctx.dsUserId || "0",
+    "priority": "u=2, i",
+    "x-bloks-version-id": PINNED_BLOKS_VERSION_ID,
+    "x-fb-client-ip": "True",
+    "x-fb-connection-type": ctx.connection.type === "WiFi" ? "wifi" : "cell",
+    "x-fb-server-cluster": "True",
+    "x-fb-http-engine": "Tigon/MNS/TCP",
+    "x-fb-rmd": "state=URL_ELIGIBLE",
     "x-ig-app-id": PINNED_IG_APP_ID,
-    "x-ig-device-id": ctx.deviceId,
-    "x-ig-family-device-id": ctx.familyDeviceId,
-    "x-ig-timezone-offset": String(tzOffsetSeconds(ctx.geo.timezone)),
-    "x-ig-capabilities": PINNED_IG_CAPABILITIES,
-    "x-ig-connection-type": ctx.connection.ig_connection_type,
+    "x-ig-app-locale": ctx.geo.language,
     "x-ig-bandwidth-speed-kbps": ctx.connection.ig_bandwidth_speed_kbps,
     "x-ig-bandwidth-totalbytes-b": ctx.connection.ig_bandwidth_totalbytes_b,
     "x-ig-bandwidth-totaltime-ms": ctx.connection.ig_bandwidth_totaltime_ms,
+    "x-ig-bloks-serialize-payload": "true",
+    "x-ig-capabilities": PINNED_IG_CAPABILITIES,
+    "x-ig-connection-speed": `${1000 + Math.floor(Math.random() * 4000)}kbps`,
+    "x-ig-connection-type": ctx.connection.ig_connection_type,
+    "x-ig-device-id": ctx.deviceId,
+    "x-ig-device-locale": ctx.geo.locale,
+    "x-ig-family-device-id": ctx.familyDeviceId,
+    "x-ig-mapped-locale": ctx.geo.locale,
+    "x-ig-timezone-offset": String(tzOffsetSeconds(ctx.geo.timezone)),
+    "x-ig-transfer-encoding": "chunked",
     "x-pigeon-session-id": ctx.pigeonSession,
     "x-pigeon-rawclienttime": String(Date.now() / 1000),
-    "x-fb-http-engine": "Liger",
-    "x-fb-client-ip": "True",
-    "x-fb-server-cluster": "True",
-    "x-bloks-version-id": PINNED_BLOKS_VERSION_ID,
+    "x-tigon-is-retry": "False",
     ...BLOKS_PRISM_HEADERS,
   }
 
@@ -243,7 +249,6 @@ export function commonHeaders(ctx: HeadersContext): Record<string, string> {
   if (ctx.bearer) headers["authorization"] = ctx.bearer
   if (ctx.dsUserId) {
     headers["ig-u-ds-user-id"] = ctx.dsUserId
-    headers["ig-intended-user-id"] = ctx.dsUserId
   }
   if (ctx.claim) headers["x-ig-www-claim"] = ctx.claim
   if (ctx.csrf) headers["x-csrftoken"] = ctx.csrf
