@@ -17,18 +17,21 @@ export class AnyMessageClient {
   private orderId: string | number = ""
   private email = ""
 
-  constructor(private apiKey: string) {
+  constructor(private token: string, private site = "instagram.com") {
     this.api = axios.create({
       baseURL: API_BASE,
       timeout: 15_000,
-      params: { apikey: this.apiKey },
     })
   }
 
   /** Order a temporary email address. */
   async orderEmail(domain?: string): Promise<EmailOrder> {
     const resp = await this.api.get("/email/order", {
-      params: { apikey: this.apiKey, ...(domain ? { domain } : {}) },
+      params: {
+        token: this.token,
+        site: this.site,
+        ...(domain ? { domain } : {}),
+      },
     })
     const data = resp.data
     if (data?.status !== "success" && data?.status !== 1 && !data?.email) {
@@ -43,14 +46,12 @@ export class AnyMessageClient {
   async checkCode(): Promise<string | null> {
     if (!this.orderId) throw new Error("No active email order")
     const resp = await this.api.get("/email/getmessage", {
-      params: { apikey: this.apiKey, id: this.orderId },
+      params: { token: this.token, id: this.orderId },
     })
     const data = resp.data
-    // Response status can be "wait" / "pending" / "success"
     if (data?.status === "wait" || data?.status === "pending" || !data?.message) {
       return null
     }
-    // Extract 6-digit code from HTML body
     const body = data.message || data.body || data.text || ""
     const match = /(\d{6})/.exec(body)
     return match ? match[1] : null
@@ -72,7 +73,7 @@ export class AnyMessageClient {
     if (!this.orderId) return
     try {
       await this.api.get("/email/cancel", {
-        params: { apikey: this.apiKey, id: this.orderId },
+        params: { token: this.token, id: this.orderId },
       })
     } catch {
       // Best effort
@@ -81,7 +82,9 @@ export class AnyMessageClient {
 
   /** Get account balance. */
   async getBalance(): Promise<number> {
-    const resp = await this.api.get("/user/balance")
+    const resp = await this.api.get("/user/balance", {
+      params: { token: this.token },
+    })
     return Number(resp.data?.balance ?? 0)
   }
 

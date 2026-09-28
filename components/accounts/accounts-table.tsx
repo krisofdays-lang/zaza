@@ -279,10 +279,7 @@ export function AccountsTable({
   // page render gets fresh data.
 
   function handleRefresh(id: number) {
-    // Record a timestamp slightly in the future to avoid a race where the
-    // server's initial lastCheckedAt update (which happens before after())
-    // is close enough to Date.now() to look "settled".
-    const startedAt = Date.now() + 2000
+    const startedAt = Date.now()
     setRefreshingIds((s) => new Map(s).set(id, startedAt))
     const acct = visibleAccounts.find((a) => a.id === id)
     const toastId = toast.loading(`Refreshing @${acct?.username ?? id}…`)

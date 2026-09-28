@@ -557,17 +557,6 @@ export async function bulkRefreshAccounts(ids: number[]) {
   if (!ids.length) return { ok: true }
   const userId = await requireUserId()
 
-  // Mark all as checked immediately.
-  await db
-    .update(igAccounts)
-    .set({ lastCheckedAt: new Date() })
-    .where(and(inArray(igAccounts.id, ids), eq(igAccounts.userId, userId)))
-
-  revalidatePath("/")
-  revalidatePath("/dashboard")
-
-  // The actual Instagram API calls happen in after() — the response returns
-  // instantly so the user can navigate freely.
   after(async () => {
     for (const id of ids) {
       try {
@@ -589,7 +578,7 @@ export async function bulkRefreshAccounts(ids: number[]) {
           const cls = classifyResponse(res.status, res.data)
           await db
             .update(igAccounts)
-            .set({ status: cls.status, lastError: cls.detail || `HTTP ${res.status}` })
+            .set({ status: cls.status, lastError: cls.detail || `HTTP ${res.status}`, lastCheckedAt: new Date() })
             .where(eq(igAccounts.id, id))
           continue
         }
@@ -601,6 +590,7 @@ export async function bulkRefreshAccounts(ids: number[]) {
           profile,
           status: "ok",
           lastError: "",
+          lastCheckedAt: new Date(),
         }
         if (views !== null) update.recentReelViews = views
         if (profile?.latest_reel_media) {
@@ -609,6 +599,11 @@ export async function bulkRefreshAccounts(ids: number[]) {
         await db.update(igAccounts).set(update).where(eq(igAccounts.id, id))
       } catch (e) {
         console.error(`[bulkRefreshAccounts] failed for id ${id}:`, e)
+        await db
+          .update(igAccounts)
+          .set({ status: "error", lastCheckedAt: new Date(), lastError: "Refresh failed" })
+          .where(eq(igAccounts.id, id))
+          .catch(() => {})
       }
     }
     revalidatePath("/")
@@ -667,12 +662,6 @@ export async function runAction(accountId: number, actionKey: string, params: Re
 export async function refreshAccountProfile(accountId: number) {
   const account = await getAccount(accountId)
   if (!account) return { ok: false, error: "Account not found" }
-
-  // Mark it as "refreshing" so the UI can show a spinner without waiting.
-  await db
-    .update(igAccounts)
-    .set({ lastCheckedAt: new Date() })
-    .where(eq(igAccounts.id, accountId))
 
   after(async () => {
     try {
