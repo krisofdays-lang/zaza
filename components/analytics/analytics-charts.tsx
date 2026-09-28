@@ -44,7 +44,7 @@ export function AnalyticsCharts({ accounts }: { accounts: AccountAnalytics[] }) 
   return (
     <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
       {/* Views by account */}
-      <section className="rounded-2xl border border-border bg-card p-5">
+      <section className="rounded-2xl border border-border bg-card p-5 velvet-card velvet-surface">
         <h2 className="text-sm font-semibold">Views by account</h2>
         <p className="text-xs text-muted-foreground">Total reel views per account (top 8)</p>
         {hasData ? (
@@ -63,7 +63,7 @@ export function AnalyticsCharts({ accounts }: { accounts: AccountAnalytics[] }) 
       </section>
 
       {/* View share donut */}
-      <section className="rounded-2xl border border-border bg-card p-5">
+      <section className="rounded-2xl border border-border bg-card p-5 velvet-card velvet-surface">
         <h2 className="text-sm font-semibold">View share</h2>
         <p className="text-xs text-muted-foreground">Distribution of views across accounts</p>
         {hasData ? (

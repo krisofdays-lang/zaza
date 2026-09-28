@@ -17,9 +17,9 @@ export function StatCard({
   dim?: boolean
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-border bg-card p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-transparent hover:ig-glow">
+    <div className="group relative overflow-hidden rounded-2xl border border-border bg-card p-5 velvet-card velvet-surface transition-all duration-300 hover:-translate-y-0.5">
       {/* faint gradient wash that brightens on hover */}
-      <div className="pointer-events-none absolute -right-8 -top-8 size-28 rounded-full ig-gradient opacity-[0.07] blur-2xl transition-opacity duration-300 group-hover:opacity-20" />
+      <div className="pointer-events-none absolute -right-8 -top-8 size-28 rounded-full ig-gradient opacity-[0.06] blur-2xl transition-opacity duration-300 group-hover:opacity-15" />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>

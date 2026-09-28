@@ -165,7 +165,7 @@ export function AnalyticsView({
   return (
     <div className="flex flex-col gap-4 px-6 py-5">
       {/* Filter / control bar */}
-      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3">
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 velvet-card">
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -216,7 +216,7 @@ export function AnalyticsView({
 
       {/* Live progress while a refresh runs */}
       {running && job ? (
-        <div className="rounded-2xl border border-border bg-card px-4 py-3">
+        <div className="rounded-2xl border border-border bg-card px-4 py-3 velvet-card">
           <div className="flex items-center justify-between gap-3 text-sm">
             <span className="flex items-center gap-2 font-medium">
               <RefreshCw className="size-4 animate-spin text-primary" />
@@ -269,7 +269,7 @@ export function AnalyticsView({
           <div className="grid gap-4 xl:grid-cols-[1fr_1.4fr]">
             <TopAccounts accounts={view.accounts} />
 
-            <section className="rounded-2xl border border-border bg-card p-5">
+            <section className="rounded-2xl border border-border bg-card p-5 velvet-card velvet-surface">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="flex items-center gap-2 text-sm font-semibold">
                   <Clapperboard className="size-4 text-[#d62976]" />
@@ -308,8 +308,8 @@ function Stat({
   chip: string
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-border bg-card p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-transparent hover:ig-glow">
-      <div className="pointer-events-none absolute -right-8 -top-8 size-28 rounded-full ig-gradient opacity-[0.07] blur-2xl transition-opacity duration-300 group-hover:opacity-20" />
+    <div className="group relative overflow-hidden rounded-2xl border border-border bg-card p-5 velvet-card velvet-surface transition-all duration-300 hover:-translate-y-0.5">
+      <div className="pointer-events-none absolute -right-8 -top-8 size-28 rounded-full ig-gradient opacity-[0.06] blur-2xl transition-opacity duration-300 group-hover:opacity-15" />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>

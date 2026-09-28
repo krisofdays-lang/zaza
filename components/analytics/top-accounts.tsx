@@ -19,7 +19,7 @@ export function TopAccounts({ accounts }: { accounts: AccountAnalytics[] }) {
   const max = ranked.length ? ranked[0][metric] : 0
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-5">
+    <section className="rounded-2xl border border-border bg-card p-5 velvet-card velvet-surface">
       <div className="flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Trophy className="size-4 text-[#feda75]" />

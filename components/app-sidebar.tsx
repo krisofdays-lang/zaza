@@ -72,7 +72,7 @@ export function AppSidebar({ isAdmin = false, licenseKey = "" }: { isAdmin?: boo
   return (
     <aside
       className={cn(
-        "hidden md:flex shrink-0 flex-col border-r border-border bg-sidebar transition-[width] duration-300 ease-in-out",
+        "hidden md:flex shrink-0 flex-col border-r border-border bg-sidebar transition-[width] duration-300 ease-in-out shadow-[1px_0_12px_-4px_var(--velvet-glow)]",
         collapsed ? "w-[4.5rem]" : "w-60",
         // Until mounted we render expanded to match the server output.
         !mounted && "w-60",

@@ -225,7 +225,7 @@ export function AutoregView({
 
       {/* Job status banner */}
       {job && job.status === "running" && (
-        <div className="flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-3">
+        <div className="flex items-center gap-3 rounded-lg border border-blue-500/20 bg-blue-500/5 px-4 py-3 shadow-[0_0_20px_-6px_oklch(0.55_0.16_260/18%)]">
           <Loader2 className="size-4 animate-spin text-blue-500" />
           <div className="flex-1 text-sm">
             <span className="font-medium">Job running</span>
@@ -249,7 +249,7 @@ export function AutoregView({
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Left: Settings */}
           <div className="space-y-5">
-            <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+            <div className="rounded-xl border border-border bg-card p-5 space-y-4 velvet-card velvet-surface">
               <h3 className="text-sm font-semibold">Registration Method</h3>
               <div className="flex gap-2">
                 {(["email", "sms"] as const).map((m) => (
@@ -323,7 +323,7 @@ export function AutoregView({
               )}
             </div>
 
-            <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+            <div className="rounded-xl border border-border bg-card p-5 space-y-4 velvet-card velvet-surface">
               <h3 className="text-sm font-semibold">Concurrency</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -355,7 +355,7 @@ export function AutoregView({
               </div>
             </div>
 
-            <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+            <div className="rounded-xl border border-border bg-card p-5 space-y-4 velvet-card velvet-surface">
               <h3 className="text-sm font-semibold">Group Label</h3>
               <input
                 type="text"
@@ -369,7 +369,7 @@ export function AutoregView({
 
           {/* Right: Proxies + Start */}
           <div className="space-y-5">
-            <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+            <div className="rounded-xl border border-border bg-card p-5 space-y-4 velvet-card velvet-surface">
               <h3 className="text-sm font-semibold">Proxies</h3>
               <p className="text-xs text-muted-foreground">
                 One proxy per line. Format: http://user:pass@host:port or socks5://host:port
@@ -425,10 +425,10 @@ export function AutoregView({
             </button>
           </div>
 
-          <div className="rounded-xl border border-border overflow-hidden">
+          <div className="rounded-xl border border-border overflow-hidden velvet-card">
             <div className="max-h-[600px] overflow-y-auto">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-card border-b border-border">
+                <thead className="sticky top-0 bg-card/95 backdrop-blur-sm border-b border-border">
                   <tr>
                     <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">#</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Status</th>
@@ -531,10 +531,10 @@ export function AutoregView({
           </div>
 
           {/* Accounts table */}
-          <div className="rounded-xl border border-border overflow-hidden">
+          <div className="rounded-xl border border-border overflow-hidden velvet-card">
             <div className="max-h-[600px] overflow-y-auto">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-card border-b border-border">
+                <thead className="sticky top-0 bg-card/95 backdrop-blur-sm border-b border-border">
                   <tr>
                     <th className="px-3 py-2 text-left">
                       <input
