@@ -102,9 +102,18 @@ async function runJob(
       const promises: Promise<void>[] = []
 
       for (let i = 0; i < batchSize; i++) {
+        if (isCancelled()) break
         const threadIdx = completed + failed + i
         const proxy = config.proxies[proxyIdx % config.proxies.length]
         proxyIdx++
+
+        // Stagger thread launches: each thread gets its own random
+        // slot so concurrent registrations don't hit IG in lockstep.
+        // First thread starts immediately, the rest wait 1.5–4.5 s each.
+        if (i > 0) {
+          const stagger = 1500 + Math.random() * 3000
+          await new Promise((r) => setTimeout(r, stagger))
+        }
 
         promises.push(
           runSingleRegistration(

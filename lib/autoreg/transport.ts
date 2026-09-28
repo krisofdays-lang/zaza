@@ -32,6 +32,16 @@ class LoopbackTlsProxyAgent extends HttpsProxyAgent<string> {
   }
 }
 
+let _warnedMissingTlsProxy = false
+function warnMissingTlsProxyOnce() {
+  if (_warnedMissingTlsProxy) return
+  _warnedMissingTlsProxy = true
+  console.warn(
+    "[autoreg] WARNING: TLS_PROXY_URL is not set — autoreg traffic is using Node's TLS/JA4 fingerprint, NOT an iPhone's. " +
+      "This mismatch against the iOS User-Agent is a primary ban signal. Start the uTLS sidecar and set TLS_PROXY_URL.",
+  )
+}
+
 export function buildProxyAgent(proxyUrl: string) {
   if (TLS_PROXY_URL) {
     return new LoopbackTlsProxyAgent(TLS_PROXY_URL, {
@@ -41,6 +51,12 @@ export function buildProxyAgent(proxyUrl: string) {
         "x-app-version": PINNED_IG_VERSION,
       },
     })
+  }
+  warnMissingTlsProxyOnce()
+  if (process.env.TLS_PROXY_REQUIRED === "1") {
+    throw new Error(
+      "TLS_PROXY_REQUIRED=1 but TLS_PROXY_URL is not set: refusing to send autoreg traffic with Node's JA3/JA4 fingerprint.",
+    )
   }
   if (!proxyUrl) return undefined
   if (proxyUrl.startsWith("socks")) return new SocksProxyAgent(proxyUrl)
