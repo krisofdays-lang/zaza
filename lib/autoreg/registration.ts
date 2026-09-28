@@ -116,6 +116,8 @@ export class InstagramRegistration {
   private cloudTrustToken: string
   private aacJid: string
   private aacCs: string
+  private qplInstanceId: number
+  private aacInitTs: number
 
   // Registration state
   private firstName = ""
@@ -167,6 +169,8 @@ export class InstagramRegistration {
     this.cloudTrustToken = genCloudTrustToken()
     this.aacJid = genAacJid()
     this.aacCs = genAacCs()
+    this.qplInstanceId = Math.floor(Math.random() * 1e18)
+    this.aacInitTs = Math.floor(Date.now() / 1000) - 30
   }
 
   /** Set callback for step progress updates. */
@@ -212,7 +216,7 @@ export class InstagramRegistration {
 
   private aacString(): string {
     return JSON.stringify({
-      aac_init_timestamp: Math.floor(Date.now() / 1000) - 30,
+      aac_init_timestamp: this.aacInitTs,
       aacjid: this.aacJid,
       aaccs: this.aacCs,
     })
@@ -220,22 +224,25 @@ export class InstagramRegistration {
 
   // ── Common server params ───────────────────────────────────────────────
 
-  private commonServerParams(): Record<string, unknown> {
-    return {
-      login_surface: "caa_signup",
-      waterfall_id: this.waterfallId,
-      device_id: this.guid,
-      cloud_trust_token: this.cloudTrustToken,
-      reg_context: this.regContext,
+  private commonServerParams(extra?: Record<string, unknown>): Record<string, unknown> {
+    const base: Record<string, unknown> = {
+      is_from_logged_out: 0,
+      offline_experiment_group: "caa_launch_ig",
+      family_device_id: null,
+      layered_homepage_experiment_group: "igios_layered_landing_screen_experiment_ld_with_xmds_v2",
+      INTERNAL__latency_qpl_instance_id: this.qplInstanceId,
       INTERNAL__latency_qpl_marker_id: "36707587_null",
-      INTERNAL__latency_qpl_instance_id: Math.floor(Math.random() * 1e18),
-      server_params: {
-        credential_type: "email",
-        device_id: this.guid,
-        waterfall_id: this.waterfallId,
-        is_from_logged_out: 1,
-      },
+      cloud_trust_token: this.cloudTrustToken,
+      login_surface: "login_home",
+      login_entry_point: "logged_out",
+      waterfall_id: this.waterfallId,
+      is_from_logged_in_switcher: 0,
+      is_platform_login: 0,
+      device_id: this.guid,
+      access_flow_version: "pre_mt_behavior",
     }
+    if (extra) Object.assign(base, extra)
+    return base
   }
 
   // ── Common client params ───────────────────────────────────────────────
@@ -243,61 +250,125 @@ export class InstagramRegistration {
   private commonClientParams(): Record<string, unknown> {
     return {
       aac: this.aacString(),
-      network_bssid: "02:00:00:00:00:00",
-      lois_settings: JSON.stringify({
-        lois_token: "",
-        lois_blob: "",
-      }),
+      network_bssid: null,
+      lois_settings: { lois_token: "" },
     }
   }
 
   // ── Flow info ──────────────────────────────────────────────────────────
 
-  private flowInfo(): Record<string, string> {
-    return {
-      flow_name: "new_to_family_ig_default",
-      flow_type: "ntf",
-    }
+  private flowInfo(): string {
+    return JSON.stringify({ flow_name: "new_to_family_ig_default", flow_type: "ntf" })
   }
 
   // ── Full reg_info payload ──────────────────────────────────────────────
 
-  private regInfo(): Record<string, unknown> {
-    const now = Math.floor(Date.now() / 1000)
-    return {
-      // Device
+  private regInfo(opts?: {
+    contactpoint?: string
+    contactpointType?: string
+    confirmationCode?: string
+    encryptedPassword?: string
+    username?: string
+    birthday?: string
+    firstName?: string
+    lastName?: string
+    fullName?: string
+    shouldSavePassword?: boolean
+  }): string {
+    const o = opts || {}
+    const cp = o.contactpoint || null
+    const cpType = cp ? (o.contactpointType || "email") : null
+    return JSON.stringify({
+      first_name: o.firstName || null,
+      last_name: o.lastName || null,
+      full_name: o.fullName || null,
+      contactpoint: cp,
+      ar_contactpoint: null,
+      attempted_empty_last_name: null,
+      contactpoint_type: cpType,
+      is_using_unified_cp: false,
+      unified_cp_screen_variant: "control",
+      is_cp_auto_confirmed: false,
+      is_cp_auto_confirmable: false,
+      is_cp_claimed: false,
+      confirmation_code: o.confirmationCode || null,
+      birthday: o.birthday || null,
+      birthday_derived_from_age: null,
+      age_range: null,
+      did_use_age: null,
+      os_shared_age_range: null,
+      gender: null,
+      use_custom_gender: false,
+      custom_gender: null,
+      encrypted_password: o.encryptedPassword || null,
+      username: o.username || null,
+      username_prefill: null,
+      accounts_list_client: null,
+      fb_conf_source: null,
       device_id: this.guid,
-      waterfall_id: this.waterfallId,
-      phone_id: this.phoneId,
-      family_device_id: this.familyDeviceId,
-      guid: this.guid,
-      // App
-      app_version: PINNED_IG_VERSION,
-      bloks_version_id: PINNED_BLOKS_VERSION_ID,
-      ig_app_id: PINNED_IG_APP_ID,
-      // User data
-      username: this.username,
-      first_name: this.firstName,
-      password: this.encryptedPassword,
-      birthday: this.birthday,
-      email: this.email,
-      phone_number: this.phone,
-      // Verification
-      email_verification_code: this.verificationCode,
-      sms_code: this.verificationCode,
-      // Timestamps
-      client_timestamp: now,
-      timestamp: now,
-      // Flow
-      ...this.flowInfo(),
-      // Anti-abuse
-      ...this.commonClientParams(),
-      // Capabilities
-      force_sign_up_code: "",
-      tos_version: "row",
-      has_sms_consent: true,
-      one_tap_opt_in: true,
-    }
+      ig4a_qe_device_id: null,
+      family_device_id: null,
+      fdid_available_on_start: false,
+      fdid_rid_available_on_start: false,
+      asdid_available_on_start: true,
+      user_id: null,
+      skip_slow_rel_check: true,
+      machine_id: this.machineId,
+      profile_photo: null,
+      profile_photo_id: null,
+      profile_photo_upload_id: null,
+      avatar: null,
+      email_oauth_token_no_contact_perm: null,
+      email_oauth_token: null,
+      email_oauth_tokens: null,
+      sign_in_with_google_email: null,
+      should_skip_two_step_conf: null,
+      openid_tokens_for_testing: null,
+      encrypted_msisdn: null,
+      headers_last_infra_flow_id: null,
+      headers_flow_id: null,
+      was_headers_prefill_available: null,
+      sso_enabled: null,
+      existing_accounts: null,
+      used_ig_birthday: null,
+      create_new_to_app_account: null,
+      skip_session_info: null,
+      ck_error: null,
+      ck_id: null,
+      ck_nonce: null,
+      should_save_password: o.shouldSavePassword ?? null,
+      fb_access_token: null,
+      is_msplit_reg: null,
+      is_spectra_reg: null,
+      dema_account_consent_given: null,
+      spectra_entry_source: null,
+      spectra_reg_token: null,
+      spectra_reg_guardian_id: null,
+      spectra_reg_guardian_logged_in_context: null,
+      spectra_requester_user_id: null,
+      user_id_of_msplit_creator: null,
+      msplit_creator_nonce: null,
+      dma_data_combination_consent_given: null,
+      xapp_accounts: null,
+      fb_device_id: null,
+      fb_machine_id: null,
+      ig_device_id: null,
+      ig_machine_id: null,
+      should_skip_nta_upsell: null,
+      big_blue_token: null,
+      caa_reg_flow_source: "login_home_native_integration_point",
+      ig_authorization_token: null,
+      full_sheet_flow: false,
+      crypted_user_id: null,
+      is_ca_late_teen: null,
+      is_early_teen: null,
+      is_caa_perf_enabled: true,
+      is_preform: true,
+      should_show_rel_error: false,
+      ignore_suma_check: false,
+      dismissed_login_upsell_with_cna: false,
+      ignore_existing_login: false,
+    })
   }
 
   // ── Update state from response ─────────────────────────────────────────
@@ -357,11 +428,27 @@ export class InstagramRegistration {
     const resp = await postGraphqlBloks(
       this.client,
       this.headers(),
-      "com.bloks.www.bloks.caa.login.aymh.create_account_button",
+      "com.bloks.www.bloks.caa.reg.aymh_create_account_button.async",
       {
-        ...this.commonClientParams(),
+        zero_balance_state: "",
+        network_bssid: null,
+        cloud_trust_token: this.cloudTrustToken,
+        should_show_nested_nta_bottom_sheet: 0,
+        aac: this.aacString(),
+        username_input: "",
+        accounts_list: [],
+        lois_settings: { lois_token: "" },
       },
-      this.commonServerParams(),
+      this.commonServerParams({
+        is_from_lid_welcome_screen: 0,
+        should_show_wa_nta_bottom_sheet: 0,
+        event_step: "landing",
+        is_eligible_for_igds_sac_reg_flow: 0,
+        should_expand_layered_bottom_sheet: 0,
+        reg_flow_source: "login_home_native_integration_point",
+        is_caa_perf_enabled: 1,
+        entrypoint: "login_home_async",
+      }),
     )
     this.updateState(resp)
   }
@@ -423,12 +510,30 @@ export class InstagramRegistration {
     const resp = await postGraphqlBloks(
       this.client,
       this.headers(),
-      "com.bloks.www.bloks.caa.register.ntm.contactpoint_email",
+      "com.bloks.www.bloks.caa.reg.contactpoint_email",
       {
         ...this.commonClientParams(),
         email: this.email,
+        email_prefilled: 0,
+        confirmed_cp_and_code: {},
+        is_from_device_emails: 0,
+        prefetch_version: 11,
+        block_store_machine_id: "",
+        fb_ig_device_id: [],
+        accounts_list: [],
+        zero_balance_state: "",
+        cloud_trust_token: this.cloudTrustToken,
       },
-      this.commonServerParams(),
+      this.commonServerParams({
+        aac: this.aacString(),
+        flow_info: this.flowInfo(),
+        reg_info: this.regInfo({ contactpoint: this.email }),
+        current_step: 0,
+        cp_funnel: 0,
+        cp_source: 0,
+        prefetch_on_field: 1,
+        is_from_logged_out: 1,
+      }),
     )
     this.updateState(resp)
   }
@@ -487,17 +592,19 @@ export class InstagramRegistration {
       this.headers(),
       "com.bloks.www.bloks.caa.reg.send_confirmation_email.async",
       {
-        ...this.commonClientParams(),
+        aac: this.aacString(),
         machine_id: this.machineId,
+        network_bssid: null,
         cloud_trust_token: this.cloudTrustToken,
+        lois_settings: { lois_token: "" },
         contactpoint: this.email,
       },
-      {
-        ...this.commonServerParams(),
+      this.commonServerParams({
         flow_info: this.flowInfo(),
-        reg_info: JSON.stringify(this.regInfo()),
+        reg_info: this.regInfo({ contactpoint: this.email }),
+        reg_context: this.regContext || "",
         current_step: 0,
-      },
+      }),
     )
     this.updateState(resp)
   }
@@ -524,13 +631,29 @@ export class InstagramRegistration {
     const resp = await postGraphqlBloks(
       this.client,
       this.headers(),
-      "com.bloks.www.bloks.caa.register.ntm.confirmation_email",
+      "com.bloks.www.bloks.caa.reg.confirmation.async",
       {
-        ...this.commonClientParams(),
-        email: this.email,
-        email_verification_code: this.verificationCode,  // string for email
+        confirmed_cp_and_code: {},
+        fb_ig_device_id: null,
+        network_bssid: null,
+        cloud_trust_token: this.cloudTrustToken,
+        code: this.verificationCode,
+        family_device_id: null,
+        device_id: this.guid,
+        block_store_machine_id: "",
+        aac: this.aacString(),
+        lois_settings: { lois_token: "" },
       },
-      this.commonServerParams(),
+      this.commonServerParams({
+        event_request_id: crypto.randomUUID(),
+        sms_retriever_started_prior_step: 0,
+        flow_info: this.flowInfo(),
+        text_input_id: Date.now(),
+        wa_timer_id: "wa_retriever",
+        reg_context: this.regContext || "",
+        reg_info: this.regInfo({ contactpoint: this.email, confirmationCode: this.verificationCode }),
+        current_step: 3,
+      }),
     )
     this.updateState(resp)
   }
@@ -538,16 +661,34 @@ export class InstagramRegistration {
   /** Step 5 (SMS): Submit SMS verification code (code as integer) */
   private async step5Sms(): Promise<void> {
     this.onStep("step5_verify_sms", `Verifying code: ${this.verificationCode}`)
+    const codeInt = Number(this.verificationCode.replace(/\D/g, ""))
     const resp = await postGraphqlBloks(
       this.client,
       this.headers(),
-      "com.bloks.www.bloks.caa.register.ntm.confirmation",
+      "com.bloks.www.bloks.caa.reg.confirmation.async",
       {
-        ...this.commonClientParams(),
-        phone_number: this.phone,
-        sms_code: Number(this.verificationCode),  // integer for SMS
+        confirmed_cp_and_code: {},
+        fb_ig_device_id: [],
+        network_bssid: null,
+        cloud_trust_token: this.cloudTrustToken,
+        code: codeInt,
+        family_device_id: null,
+        device_id: this.guid,
+        block_store_machine_id: "",
+        aac: this.aacString(),
+        lois_settings: { lois_token: "" },
       },
-      this.commonServerParams(),
+      this.commonServerParams({
+        event_request_id: crypto.randomUUID(),
+        sms_retriever_started_prior_step: 0,
+        flow_info: this.flowInfo(),
+        text_input_id: Date.now(),
+        wa_timer_id: "wa_retriever",
+        reg_context: this.regContext || "",
+        reg_info: this.regInfo({ contactpoint: this.phone, contactpointType: "phone" }),
+        confirmation_medium: "sms",
+        current_step: 3,
+      }),
     )
     this.updateState(resp)
   }
@@ -556,19 +697,35 @@ export class InstagramRegistration {
   private async step6Password(): Promise<void> {
     this.onStep("step6_password", "Setting password")
 
-    // Encrypt the password
     if (!this.passwordKey?.publicKey) throw new Error("No password key available")
     this.encryptedPassword = encryptPassword(this.password, this.passwordKey)
 
     const resp = await postGraphqlBloks(
       this.client,
       this.headers(),
-      "com.bloks.www.bloks.caa.register.ntm.password",
+      "com.bloks.www.bloks.caa.reg.password.async",
       {
         ...this.commonClientParams(),
-        password: this.encryptedPassword,
+        encrypted_password: this.encryptedPassword,
+        spi_action: null,
+        fb_ig_device_id: null,
+        cloud_trust_token: this.cloudTrustToken,
+        family_device_id: null,
+        device_id: this.guid,
+        block_store_machine_id: this.machineId || "",
       },
-      this.commonServerParams(),
+      this.commonServerParams({
+        event_request_id: crypto.randomUUID(),
+        flow_info: this.flowInfo(),
+        reg_context: this.regContext || "",
+        reg_info: this.regInfo({
+          contactpoint: this.email || this.phone,
+          encryptedPassword: this.encryptedPassword,
+          shouldSavePassword: true,
+          confirmationCode: this.verificationCode,
+        }),
+        current_step: 4,
+      }),
     )
     this.updateState(resp)
   }
@@ -576,49 +733,143 @@ export class InstagramRegistration {
   /** Step 7: Set birthday (DD-MM-YYYY) */
   private async step7Birthday(): Promise<void> {
     this.onStep("step7_birthday", `Setting birthday: ${this.birthday}`)
+
+    const [day, month, year] = this.birthday.split("-").map(Number)
+    const birthdayTs = Math.floor(
+      new Date(Date.UTC(year, month - 1, day)).getTime() / 1000
+    )
+
     const resp = await postGraphqlBloks(
       this.client,
       this.headers(),
-      "com.bloks.www.bloks.caa.register.ntm.birthday",
+      "com.bloks.www.bloks.caa.reg.birthday.async",
       {
-        ...this.commonClientParams(),
-        birthday: this.birthday,
+        lois_settings: { lois_token: "" },
+        client_timezone: this.geo?.timezone || "America/Chicago",
+        is_youth_regulation_flow_complete: 0,
+        network_bssid: null,
+        birthday_or_current_date_string: this.birthday,
+        os_age_range: "",
+        should_skip_youth_tos: 0,
+        birthday_timestamp: birthdayTs,
+        aac: this.aacString(),
+        accounts_list: [],
+        zero_balance_state: "",
       },
-      this.commonServerParams(),
+      this.commonServerParams({
+        reg_context: this.regContext || "",
+        flow_info: this.flowInfo(),
+        reg_info: this.regInfo({ contactpoint: this.email || this.phone, birthday: this.birthday }),
+        current_step: 6,
+      }),
     )
     this.updateState(resp)
   }
 
-  /** Step 8: Set username (actually comes after birthday in the flow) */
-  private async step8Username(): Promise<void> {
-    this.onStep("step8_username", `Setting username: ${this.username}`)
+  private ageRange(): string {
+    const [day, month, year] = this.birthday.split("-").map(Number)
+    const today = new Date()
+    let age = today.getFullYear() - year
+    if (today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day)) {
+      age--
+    }
+    return age >= 18 ? "o18" : "u18"
+  }
+
+  private regInfoWithAccumulated(extra?: Record<string, unknown>): string {
+    const base = JSON.parse(this.regInfo({
+      contactpoint: this.email || this.phone,
+      confirmationCode: this.verificationCode,
+      birthday: this.birthday,
+      encryptedPassword: this.encryptedPassword,
+      username: this.username,
+      firstName: this.firstName,
+      shouldSavePassword: true,
+    }))
+    base.age_range = this.ageRange()
+    base.should_skip_youth_tos = true
+    if (extra) Object.assign(base, extra)
+    return JSON.stringify(base)
+  }
+
+  /** Step 8: Set name (name_ig_and_soap, comes after birthday in the flow) */
+  private async step8Name(): Promise<void> {
+    this.onStep("step8_name", `Setting name: ${this.fullName}`)
+
+    const regInfo = this.regInfoWithAccumulated({
+      screen_visited: [
+        "CAA_REG_CONTACT_POINT_PHONE",
+        "CAA_REG_CONTACT_POINT_EMAIL",
+        "CAA_REG_CONFIRMATION_SCREEN",
+        "CAA_REG_PASSWORD",
+        "bloks.caa.reg.birthday",
+        "CAA_REG_IG_NAME_SCREEN",
+      ],
+    })
+
     const resp = await postGraphqlBloks(
       this.client,
       this.headers(),
-      "com.bloks.www.bloks.caa.register.ntm.username",
+      "com.bloks.www.bloks.caa.reg.name_ig_and_soap.async",
       {
         ...this.commonClientParams(),
+        zero_balance_state: "",
+        accounts_list: [],
+        cloud_trust_token: this.cloudTrustToken,
+        name: this.fullName,
+      },
+      this.commonServerParams({
+        reg_context: this.regContext || "",
+        flow_info: this.flowInfo(),
+        reg_info: regInfo,
+        current_step: 7,
+      }),
+    )
+    this.updateState(resp)
+  }
+
+  /** Step 9: Set username (comes after name in the flow) */
+  private async step9Username(): Promise<void> {
+    this.onStep("step9_username", `Setting username: ${this.username}`)
+
+    const regInfo = this.regInfoWithAccumulated({
+      full_name: this.fullName,
+      last_name: this.lastName,
+      screen_visited: [
+        "CAA_REG_CONTACT_POINT_PHONE",
+        "CAA_REG_CONTACT_POINT_EMAIL",
+        "CAA_REG_CONFIRMATION_SCREEN",
+        "CAA_REG_PASSWORD",
+        "bloks.caa.reg.birthday",
+        "CAA_REG_IG_NAME_SCREEN",
+        "CAA_REG_USERNAME",
+      ],
+    })
+
+    const resp = await postGraphqlBloks(
+      this.client,
+      this.headers(),
+      "com.bloks.www.bloks.caa.reg.username.async",
+      {
+        ...this.commonClientParams(),
+        zero_balance_state: "",
+        accounts_list: [],
+        cloud_trust_token: this.cloudTrustToken,
+        validation_text: this.username,
         username: this.username,
-        ...this.regInfo(),
       },
-      this.commonServerParams(),
-    )
-    this.updateState(resp)
-  }
-
-  /** Step 9: Set name (name_ig_and_soap, actually shown after username in the UI) */
-  private async step9Name(): Promise<void> {
-    this.onStep("step9_name", `Setting name: ${this.fullName}`)
-    const resp = await postGraphqlBloks(
-      this.client,
-      this.headers(),
-      "com.bloks.www.bloks.caa.register.ntm.name_ig_and_soap",
-      {
-        ...this.commonClientParams(),
-        first_name: this.fullName,
-        ...this.regInfo(),
-      },
-      this.commonServerParams(),
+      this.commonServerParams({
+        reg_context: this.regContext || "",
+        flow_info: this.flowInfo(),
+        reg_info: regInfo,
+        current_step: 8,
+        action: 1,
+        post_tos: 0,
+        text_input_id: Math.floor(Math.random() * 9e14) + 1e14,
+        suggestions_container_id: Math.floor(Math.random() * 9e14) + 1e14,
+        screen_id: Math.floor(Math.random() * 9e14) + 1e14,
+        input_id: Math.floor(Math.random() * 9e14) + 1e14,
+      }),
     )
     this.updateState(resp)
   }
@@ -626,15 +877,53 @@ export class InstagramRegistration {
   /** Step 10: Create account (uses async_action endpoint) */
   private async step10CreateAccount(): Promise<void> {
     this.onStep("step10_create", "Creating account")
+
+    const regInfo = this.regInfoWithAccumulated({
+      full_name: this.fullName,
+      last_name: this.lastName,
+      screen_visited: [
+        "CAA_REG_CONTACT_POINT_PHONE",
+        "CAA_REG_CONTACT_POINT_EMAIL",
+        "CAA_REG_CONFIRMATION_SCREEN",
+        "CAA_REG_PASSWORD",
+        "bloks.caa.reg.birthday",
+        "CAA_REG_IG_NAME_SCREEN",
+        "CAA_REG_USERNAME",
+      ],
+    })
+
     const resp = await postAsyncAction(
       this.client,
       this.headers(),
-      "com.bloks.www.bloks.caa.register.ntm.create_account.async",
+      "com.bloks.www.bloks.caa.reg.create.account.async",
       {
         ...this.commonClientParams(),
-        ...this.regInfo(),
+        passkey_eligible_device: 0,
+        ck_error: "",
+        failed_birthday_year_count: "",
+        headers_last_infra_flow_id: "",
+        ig_partially_created_account_nonce_expiry: 0,
+        should_ignore_existing_login: 0,
+        reached_from_tos_screen: 1,
+        ig_partially_created_account_nonce: "",
+        has_dismissed_suma_pre_conf: 0,
+        ck_nonce: "",
+        force_sessionless_nux_experience: 0,
+        ig_partially_created_account_user_id: 0,
+        ck_id: "",
+        no_contact_perm_email_oauth_token: "",
+        encrypted_msisdn: "",
       },
-      this.commonServerParams(),
+      this.commonServerParams({
+        reg_context: this.regContext || "",
+        flow_info: this.flowInfo(),
+        reg_info: regInfo,
+        current_step: 9,
+        sa_prefetch_callback_id: "",
+        should_ignore_suma_check: 0,
+        bloks_controller_source: "bk_caa_reg_tos_screen",
+        app_id: 0,
+      }),
     )
     this.updateState(resp)
 
@@ -666,19 +955,28 @@ export class InstagramRegistration {
   /** NUX Step 1: Profile skip */
   private async nuxProfileSkip(): Promise<void> {
     this.onStep("nux_profile_skip", "Completing NUX: profile skip")
+
+    const regInfo = this.regInfoWithAccumulated({
+      full_name: this.fullName,
+      last_name: this.lastName,
+      family_device_id: this.familyDeviceId,
+      profile_photo: null,
+    })
+
     const resp = await postGraphqlBloks(
       this.client,
       this.headers(),
       "com.bloks.www.bloks.caa.registration.profile.async",
+      {},
       {
-        ...this.commonClientParams(),
-      },
-      {
-        ...this.commonServerParams(),
-        server_params: {
-          ...((this.commonServerParams().server_params as object) || {}),
-          user_id: this.igUserId || this.dsUserId,
-        },
+        is_from_logged_out: 0,
+        offline_experiment_group: "caa_launch_ig",
+        family_device_id: this.familyDeviceId,
+        layered_homepage_experiment_group: "default_control",
+        INTERNAL__latency_qpl_instance_id: this.qplInstanceId,
+        login_surface: "unknown",
+        flow_info: this.flowInfo(),
+        reg_info: regInfo,
       },
     )
     this.updateState(resp)
@@ -687,16 +985,33 @@ export class InstagramRegistration {
   /** NUX Step 2: Registration transition */
   private async nuxRegTransition(): Promise<void> {
     this.onStep("nux_reg_transition", "Completing NUX: registration transition")
+
+    const regInfo = JSON.stringify({
+      first_name: this.firstName || null,
+      last_name: this.lastName || null,
+      full_name: this.fullName || null,
+      contactpoint: null,
+      contactpoint_type: "email",
+      username: this.username,
+      family_device_id: this.familyDeviceId,
+      user_id: this.igUserId || this.dsUserId || null,
+    })
+
     const resp = await postGraphqlBloks(
       this.client,
       this.headers(),
       "com.bloks.www.bloks.caa.reg.transition.async",
+      {},
       {
-        ...this.commonClientParams(),
-        created_user_id: this.igUserId || this.dsUserId,
-        fb_uid: this.igUserId || this.dsUserId,
+        is_from_logged_out: 0,
+        offline_experiment_group: null,
+        family_device_id: this.familyDeviceId,
+        layered_homepage_experiment_group: null,
+        INTERNAL__latency_qpl_instance_id: this.qplInstanceId,
+        login_surface: "unknown",
+        flow_info: this.flowInfo(),
+        reg_info: regInfo,
       },
-      this.commonServerParams(),
     )
     this.updateState(resp)
   }
@@ -709,12 +1024,12 @@ export class InstagramRegistration {
     const resp1 = await postGraphqlBloks(
       this.client,
       this.headers(),
-      "com.bloks.www.bloks.caa.registration.consent.dsa_v2_ig_one_tap_v2_0.async",
+      "com.bloks.www.privacy.consent.prompt.action",
+      {},
       {
-        ...this.commonClientParams(),
-        type: "PROMPT",
+        flow_name: "new_users_meta_flow",
+        source: "source",
       },
-      this.commonServerParams(),
     )
     this.updateState(resp1)
 
@@ -723,20 +1038,24 @@ export class InstagramRegistration {
     const expMatch = /"experience_id"\s*:\s*"([^"]+)"/.exec(raw1)
     const experienceId = expMatch ? expMatch[1] : ""
 
-    await sleep(2000)
+    if (!experienceId) return
+
+    await sleep(1000)
 
     // Phase 2: ACTION — submit APPROVED with experience_id
     const resp2 = await postGraphqlBloks(
       this.client,
       this.headers(),
-      "com.bloks.www.bloks.caa.registration.consent.dsa_v2_ig_one_tap_v2_0.async",
+      "com.bloks.www.privacy.consent.prompt.action",
+      {},
       {
-        ...this.commonClientParams(),
-        type: "ACTION",
+        flow_name: "new_users_meta_flow",
+        INTERNAL__latency_qpl_marker_id: "36707587_null",
+        INTERNAL__latency_qpl_instance_id: this.qplInstanceId,
+        _w_s228763: "",
+        source: "source",
         experience_id: experienceId,
-        consent_status: "APPROVED",
       },
-      this.commonServerParams(),
     )
     this.updateState(resp2)
   }
@@ -878,14 +1197,14 @@ export class InstagramRegistration {
       await this.step7Birthday()
       await this.stepDelay()
 
-      // Step 8: username (comes before name in the actual flow)
+      // Step 8: name (comes before username in the flow)
       this.checkCancelled()
-      await this.step8Username()
+      await this.step8Name()
       await this.stepDelay()
 
-      // Step 9: name
+      // Step 9: username
       this.checkCancelled()
-      await this.step9Name()
+      await this.step9Username()
       await this.stepDelay()
 
       // Step 10: create account
