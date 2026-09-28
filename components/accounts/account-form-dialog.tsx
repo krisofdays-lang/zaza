@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -17,9 +17,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { createAccount, editAccount } from "@/app/actions/accounts"
+import { createAccount, editAccount, getAccountSensitiveFields } from "@/app/actions/accounts"
 import type { DisplayAccount } from "@/app/actions/accounts"
-import { Plus } from "lucide-react"
+import { Plus, Eye, EyeOff } from "lucide-react"
 
 const PROXY_TYPES = [
   { value: "none", label: "No proxy" },
@@ -27,7 +27,6 @@ const PROXY_TYPES = [
   { value: "socks5", label: "SOCKS5" },
 ]
 
-// Small helper text shown under a field to explain what it is / where to find it.
 function Hint({ children }: { children: React.ReactNode }) {
   return <p className="text-xs leading-relaxed text-muted-foreground">{children}</p>
 }
@@ -46,12 +45,8 @@ type FormState = {
 function initialForm(account?: DisplayAccount): FormState {
   return {
     username: account?.username ?? "",
-    // Sensitive fields are excluded from the display query — on edit the fields
-    // start blank and the server keeps existing values when left empty.
     password: "",
     twofa: "",
-    // The cookie blob is never shown back: it's write-only. Leaving it blank on
-    // edit keeps the account's existing decoded identity.
     cookie: "",
     proxyType: account?.proxyType ?? "none",
     proxyUrl: account?.proxyUrl ?? "",
@@ -86,14 +81,37 @@ export function AccountFormDialog({
 
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<FormState>(() => initialForm(account))
+  const [showPassword, setShowPassword] = useState(false)
+  const [loadingSensitive, setLoadingSensitive] = useState(false)
+  const [originalCookie, setOriginalCookie] = useState("")
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
   }
 
-  // When opening in edit mode, sync the form to the latest account values.
+  useEffect(() => {
+    if (!open || mode !== "edit" || !account) return
+    setLoadingSensitive(true)
+    getAccountSensitiveFields(account.id)
+      .then((data) => {
+        if (data) {
+          setOriginalCookie(data.cookieBase64 || "")
+          setForm((f) => ({
+            ...f,
+            password: data.password || "",
+            cookie: data.cookieBase64 || "",
+          }))
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingSensitive(false))
+  }, [open, mode, account])
+
   function handleOpenChange(o: boolean) {
-    if (o) setForm(initialForm(account))
+    if (o) {
+      setForm(initialForm(account))
+      setShowPassword(false)
+    }
     setOpen(o)
   }
 
@@ -103,9 +121,6 @@ export function AccountFormDialog({
       toast.error("Username is required")
       return
     }
-    // Login-by-credentials (empty cookie) isn't wired up yet — block the add
-    // with a clear notice, only when creating. On edit a blank cookie just means
-    // "keep the existing identity".
     if (mode === "create" && !form.cookie.trim()) {
       toast.error("Login by username/password isn't available yet — paste a base64 cookie to add this account.")
       return
@@ -113,7 +128,11 @@ export function AccountFormDialog({
     setSaving(true)
     try {
       if (mode === "edit" && account) {
-        await editAccount(account.id, form)
+        const submitForm = {
+          ...form,
+          cookie: form.cookie === originalCookie ? "" : form.cookie,
+        }
+        await editAccount(account.id, submitForm)
         toast.success("Account updated")
       } else {
         const groupIds = form.groupId && form.groupId !== "none" ? [Number(form.groupId)] : []
@@ -172,14 +191,26 @@ export function AccountFormDialog({
 
           <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              value={form.password}
-              onChange={(e) => set("password", e.target.value)}
-              placeholder="••••••••"
-              autoComplete="new-password"
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                value={form.password}
+                onChange={(e) => set("password", e.target.value)}
+                placeholder={loadingSensitive ? "Loading..." : "••••••••"}
+                autoComplete="new-password"
+                className="pr-10"
+              />
+              {form.password && (
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                >
+                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              )}
+            </div>
             <Hint>Used only for the login flow when no cookie is provided.</Hint>
           </div>
 
@@ -202,14 +233,14 @@ export function AccountFormDialog({
               id="cookie"
               value={form.cookie}
               onChange={(e) => set("cookie", e.target.value)}
-              placeholder="eyJzYXZlZF9hdCI6..."
+              placeholder={loadingSensitive ? "Loading..." : "eyJzYXZlZF9hdCI6..."}
               className="font-mono text-xs min-h-24"
             />
             <Hint>
               {isEdit ? (
                 <>
-                  Leave blank to keep the current device identity. Paste a new base64 cookie to replace the session and
-                  device identifiers.
+                  Current device identity shown above. Clear the field to keep it as-is, or paste a new base64 cookie to
+                  replace it.
                 </>
               ) : (
                 <>

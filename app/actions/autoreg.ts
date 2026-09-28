@@ -163,7 +163,7 @@ export async function transferAutoregAccount(
         phoneId: arAcct.phoneId,
         identity: sessionBlob,
         cloudTrustToken: arAcct.cloudTrustToken,
-        proxyType: arAcct.proxyUrl ? "http" : "none",
+        proxyType: !arAcct.proxyUrl ? "none" : arAcct.proxyUrl.startsWith("socks") ? "socks5" : "http",
         proxyUrl: arAcct.proxyUrl,
         iphoneModel: arAcct.iphoneModel,
         iosVersion: arAcct.iosVersion,

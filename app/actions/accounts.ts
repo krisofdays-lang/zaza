@@ -86,6 +86,27 @@ export async function getAccountsForDisplay() {
 // without the heavy auth/identity blobs that bloat the RSC payload.
 export type DisplayAccount = Awaited<ReturnType<typeof getAccountsForDisplay>>[number]
 
+export async function getAccountSensitiveFields(id: number) {
+  const userId = await requireUserId()
+  const [row] = await db
+    .select({
+      id: igAccounts.id,
+      password: igAccounts.password,
+      identity: igAccounts.identity,
+    })
+    .from(igAccounts)
+    .where(and(eq(igAccounts.id, id), eq(igAccounts.userId, userId)))
+    .limit(1)
+  if (!row) return null
+  let cookieBase64 = ""
+  if (row.identity) {
+    try {
+      cookieBase64 = Buffer.from(JSON.stringify(row.identity)).toString("base64")
+    } catch { /* empty */ }
+  }
+  return { password: row.password, cookieBase64 }
+}
+
 // Ultra-lightweight status-only query for client-side polling. Returns only the
 // fields that can change asynchronously (after refresh / create) so the UI can
 // update status badges, avatars and usernames without a full page refresh.
