@@ -153,6 +153,7 @@ export class InstagramRegistration {
   private emailClient: AnyMessageClient | null = null
   private smsClient: TextVerifiedClient | null = null
 
+  private nuxConsentApproved = false
   private cancelled = false
   private onStep: StepCallback = () => {}
 
@@ -512,25 +513,29 @@ export class InstagramRegistration {
   }
 
   // ── Detect restriction/ban ─────────────────────────────────────────────
+  // Matches the reference _detect_restriction markers exactly (case-insensitive).
 
   private detectRestriction(resp: AxiosResponse): string | null {
     const raw = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data)
-    const lower = raw.toLowerCase()
+    const low = raw.toLowerCase()
 
-    if (lower.includes("ufac") || lower.includes("checkpoint")) {
-      return "UFAC/Checkpoint detected"
-    }
-    if (lower.includes("account_disabled") || lower.includes("account_suspended")) {
-      return "Account disabled/suspended"
-    }
-    if (lower.includes("spam") || lower.includes("abuse")) {
-      return "Spam/abuse detection triggered"
-    }
-    if (lower.includes("try_again_later") || lower.includes("try again later")) {
-      return "Rate limited — try again later"
-    }
-    if (lower.includes("generic_request_error")) {
-      return "Generic request error"
+    const markers: [string, string][] = [
+      ["enrollment_waiting_room", "UFAC enrollment waiting room"],
+      ["checkpoint.ufac", "UFAC checkpoint"],
+      [".ufac.", "UFAC"],
+      ["ufac_", "UFAC"],
+      ["www.checkpoint", "checkpoint"],
+      ["challenge_required", "challenge required"],
+      ["account_disabled", "account disabled"],
+      ['is_disabled":true', "account disabled"],
+      ["account_suspended", "account suspended"],
+      ["spam", "spam detection triggered"],
+      ["try_again_later", "rate limited"],
+      ["try again later", "rate limited"],
+      ["generic_request_error", "generic request error"],
+    ]
+    for (const [needle, reason] of markers) {
+      if (low.includes(needle)) return reason
     }
     return null
   }
@@ -1196,7 +1201,7 @@ export class InstagramRegistration {
 
     await sleep(1000)
 
-    // Phase 2: ACTION — submit APPROVED with experience_id
+    // Phase 2: ACTION — submit with experience_id, expect APPROVED
     const resp2 = await postGraphqlBloks(
       this.client,
       this.headers(),
@@ -1212,6 +1217,15 @@ export class InstagramRegistration {
       },
     )
     this.updateState(resp2)
+
+    const raw2 = typeof resp2.data === "string" ? resp2.data : JSON.stringify(resp2.data)
+    this.nuxConsentApproved = raw2.includes("APPROVED")
+    this.onStep(
+      "nux_consent",
+      this.nuxConsentApproved
+        ? "Consent APPROVED — onboarding complete"
+        : "Consent not approved — account may remain partially_created",
+    )
   }
 
   // ── Post-registration warmup ───────────────────────────────────────────
@@ -1367,6 +1381,8 @@ export class InstagramRegistration {
       await this.stepDelay()
 
       // ── Phase 4: NUX completion ─────────────────────────────────────
+      // Required to transition account out of partially_created state.
+      // Without APPROVED from consent, the account gets banned in ~30 min.
       this.checkCancelled()
       try {
         await this.nuxProfileSkip()
@@ -1375,12 +1391,18 @@ export class InstagramRegistration {
         await sleep(3000)
         await this.nuxPrivacyConsent()
       } catch (e) {
-        // NUX failures are logged but don't fail the registration
         this.onStep("nux_warning", `NUX partial: ${(e as Error).message}`)
       }
 
       // ── Phase 5: Warmup ─────────────────────────────────────────────
       await this.warmup()
+
+      // Gate final success on APPROVED (like reference):
+      // only fully onboarded accounts are considered successful.
+      if (!this.nuxConsentApproved) {
+        this.onStep("not_approved", "Account created but consent not APPROVED — partially_created")
+        return this.buildResult(false, "NUX consent not approved — account partially_created")
+      }
 
       this.onStep("done", `Account created: ${this.username}`)
 
