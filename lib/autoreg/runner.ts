@@ -107,12 +107,15 @@ async function runJob(
         const proxy = config.proxies[proxyIdx % config.proxies.length]
         proxyIdx++
 
-        // Stagger thread launches: each thread gets its own random
-        // slot so concurrent registrations don't hit IG in lockstep.
-        // First thread starts immediately, the rest wait 1.5–4.5 s each.
         if (i > 0) {
           const stagger = 1500 + Math.random() * 3000
-          await new Promise((r) => setTimeout(r, stagger))
+          const chunk = 200
+          let waited = 0
+          while (waited < stagger && !isCancelled()) {
+            await new Promise((r) => setTimeout(r, Math.min(chunk, stagger - waited)))
+            waited += chunk
+          }
+          if (isCancelled()) break
         }
 
         promises.push(

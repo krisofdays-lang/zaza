@@ -69,11 +69,13 @@ export class TextVerifiedClient {
   }
 
   /** Wait for code with timeout. */
-  async waitForCode(timeoutMs = 60_000, pollMs = 3_000): Promise<string> {
+  async waitForCode(timeoutMs = 60_000, pollMs = 3_000, isCancelled?: () => boolean): Promise<string> {
     const start = Date.now()
     while (Date.now() - start < timeoutMs) {
+      if (isCancelled?.()) throw new Error("Registration cancelled")
       const code = await this.checkCode()
       if (code) return code
+      if (isCancelled?.()) throw new Error("Registration cancelled")
       await sleep(pollMs)
     }
     throw new Error(`Timed out waiting for SMS code after ${timeoutMs}ms`)

@@ -187,7 +187,11 @@ export class InstagramRegistration {
   /** Cancel the registration. */
   cancel() {
     this.cancelled = true
+    try { this.emailClient?.cancelEmail() } catch {}
+    try { this.smsClient?.cancelPhone() } catch {}
   }
+
+  isCancelled = () => this.cancelled
 
   private checkCancelled() {
     if (this.cancelled) throw new Error("Registration cancelled")
@@ -1346,11 +1350,13 @@ export class InstagramRegistration {
         this.verificationCode = await this.emailClient!.waitForCode(
           CODE_WAIT_TIMEOUT_MS,
           CODE_POLL_INTERVAL_MS,
+          this.isCancelled,
         )
       } else {
         this.verificationCode = await this.smsClient!.waitForCode(
           CODE_WAIT_TIMEOUT_MS,
           CODE_POLL_INTERVAL_MS,
+          this.isCancelled,
         )
       }
       this.onStep("code_received", `Code: ${this.verificationCode}`)

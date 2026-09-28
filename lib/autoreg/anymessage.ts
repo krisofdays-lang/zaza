@@ -104,7 +104,7 @@ export class AnyMessageClient {
   }
 
   /** Wait for code with timeout and jitter (matches reference). */
-  async waitForCode(timeoutMs = 60_000, pollMs = 3_000): Promise<string> {
+  async waitForCode(timeoutMs = 60_000, pollMs = 3_000, isCancelled?: () => boolean): Promise<string> {
     const deadline = Date.now() + timeoutMs
 
     // Initial jitter to spread polling across concurrent registrations
@@ -114,11 +114,13 @@ export class AnyMessageClient {
     }
 
     while (Date.now() < deadline) {
+      if (isCancelled?.()) throw new Error("Registration cancelled")
       const code = await this.checkCode()
       if (code) {
         this.codeReceived = true
         return code
       }
+      if (isCancelled?.()) throw new Error("Registration cancelled")
       // Poll interval with ±30% jitter (prevents phase-locking)
       const jittered = pollMs * (0.7 + Math.random() * 0.6)
       await sleep(jittered)
