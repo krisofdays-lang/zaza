@@ -444,25 +444,54 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
   const h = resp.headers
   const result: AuthCapture = {}
 
-  // Bearer token from ig-set-authorization
+  const raw = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data ?? "")
+  const unescaped = raw.replace(/\\"/g, '"').replace(/\\\\/g, "\\")
+
+  // Bearer token: header first, then response body (escaped bloks payload)
   const auth = h["ig-set-authorization"]
   if (auth && typeof auth === "string" && auth.startsWith("Bearer")) {
     result.bearer = auth
+  }
+  if (!result.bearer) {
+    for (const text of [raw, unescaped]) {
+      const m = /Bearer\s+IGT:2:[A-Za-z0-9+/=_\-]+/.exec(text)
+      if (m) { result.bearer = m[0]; break }
+    }
   }
 
   // Mid from ig-set-x-mid
   const mid = h["ig-set-x-mid"]
   if (mid) result.mid = String(mid)
 
-  // www-claim
+  // www-claim: header first, then response body
   const claim = h["x-ig-set-www-claim"]
-  if (claim) result.claim = String(claim)
+  if (claim && String(claim) !== "0") {
+    result.claim = String(claim)
+  }
+  if (!result.claim) {
+    for (const text of [raw, unescaped]) {
+      const m = /hmac\.[A-Za-z0-9_\-]{16,}/.exec(text)
+      if (m) { result.claim = m[0]; break }
+    }
+  }
 
-  // ds_user_id from response body or headers
+  // ds_user_id: header → cookie → response body
   const dsUser = h["ig-set-ig-u-ds-user-id"]
-  if (dsUser) result.dsUserId = String(dsUser)
+  if (dsUser) {
+    result.dsUserId = String(dsUser)
+  }
+  if (!result.dsUserId) {
+    const dsPatterns = [
+      /"(?:pk|user_id|ds_user_id)"\s*:\s*"?(\d{6,})"?/,
+      /ds_user_id["\\s:=]+(\d{6,})/,
+    ]
+    for (const pat of dsPatterns) {
+      const m = pat.exec(raw) || pat.exec(unescaped)
+      if (m) { result.dsUserId = m[1]; break }
+    }
+  }
 
-  // CSRF from set-cookie
+  // CSRF and RUR from set-cookie
   const cookies = h["set-cookie"]
   if (cookies) {
     const cookieStr = Array.isArray(cookies) ? cookies.join("; ") : String(cookies)
@@ -470,7 +499,15 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
     if (csrfMatch) result.csrf = csrfMatch[1]
     const rurMatch = /rur=([^;]+)/.exec(cookieStr)
     if (rurMatch) result.rur = rurMatch[1]
+    if (!result.dsUserId) {
+      const dsMatch = /ds_user_id=(\d+)/.exec(cookieStr)
+      if (dsMatch) result.dsUserId = dsMatch[1]
+    }
   }
+
+  // RUR from header
+  const rur = h["ig-set-ig-u-rur"]
+  if (rur && !result.rur) result.rur = String(rur)
 
   return result
 }
