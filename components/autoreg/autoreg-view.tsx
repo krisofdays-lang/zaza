@@ -436,7 +436,7 @@ export function AutoregView({
                     <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Username</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Contact</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Step</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Error</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Detail</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Time</th>
                   </tr>
                 </thead>
@@ -466,8 +466,11 @@ export function AutoregView({
                         {log.email || log.phone || "—"}
                       </td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">{log.step}</td>
-                      <td className="px-3 py-2 text-xs text-red-400 truncate max-w-[200px]" title={log.error}>
-                        {log.error || "—"}
+                      <td className={cn(
+                        "px-3 py-2 text-xs truncate max-w-[300px]",
+                        log.status === "error" ? "text-red-400" : "text-emerald-400/70",
+                      )} title={log.status === "error" ? log.error : log.stepDetail}>
+                        {log.status === "error" ? (log.error || "—") : (log.stepDetail || "—")}
                       </td>
                       <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
                         {log.startedAt ? new Date(log.startedAt).toLocaleTimeString() : "—"}

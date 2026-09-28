@@ -191,10 +191,9 @@ async function runSingleRegistration(
   const logId = logRow.id
   const reg = new InstagramRegistration(regConfig)
 
-  // Set up step callback to update the log
   reg.setOnStep((step, detail) => {
     db.update(igAutoregLogs)
-      .set({ step, error: detail || "" })
+      .set({ step, stepDetail: detail || "" })
       .where(eq(igAutoregLogs.id, logId))
       .catch(console.error)
   })

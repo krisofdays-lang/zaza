@@ -334,6 +334,7 @@ export const igAutoregLogs = pgTable("ig_autoreg_logs", {
   proxy: text("proxy").notNull().default(""),
   method: text("method").notNull().default("email"), // email | sms
   step: text("step").notNull().default(""),           // current step name
+  stepDetail: text("step_detail").notNull().default(""), // current step detail/progress info
   status: text("status").notNull().default("running"), // running | success | error | cancelled
   error: text("error").notNull().default(""),
   // Created autoreg account id on success

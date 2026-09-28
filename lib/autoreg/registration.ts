@@ -129,7 +129,7 @@ export class InstagramRegistration {
   private verificationCode = ""
 
   // Server-side state accumulated across steps
-  private regContext: Record<string, unknown> = {}
+  private regContext = ""
   private passwordKey: PasswordKey | null = null
   private encryptedPassword = ""
 
@@ -226,6 +226,7 @@ export class InstagramRegistration {
       waterfall_id: this.waterfallId,
       device_id: this.guid,
       cloud_trust_token: this.cloudTrustToken,
+      reg_context: this.regContext,
       INTERNAL__latency_qpl_marker_id: "36707587_null",
       INTERNAL__latency_qpl_instance_id: Math.floor(Math.random() * 1e18),
       server_params: {
@@ -284,8 +285,6 @@ export class InstagramRegistration {
       // Verification
       email_verification_code: this.verificationCode,
       sms_code: this.verificationCode,
-      // Server state
-      ...this.regContext,
       // Timestamps
       client_timestamp: now,
       timestamp: now,
@@ -313,11 +312,8 @@ export class InstagramRegistration {
     if (auth.csrf) this.csrf = auth.csrf
     if (auth.rur) this.rur = auth.rur
 
-    // Extract and merge reg_context
     const ctx = extractRegContext(resp)
-    if (ctx) {
-      this.regContext = { ...this.regContext, ...ctx }
-    }
+    if (ctx) this.regContext = ctx
   }
 
   // ── Detect restriction/ban ─────────────────────────────────────────────
@@ -377,7 +373,12 @@ export class InstagramRegistration {
       `${BASE_URL}/api/v1/launcher/mobileconfig/?bool_opt_policy=`,
       { headers: this.headers() },
     )
-    const data = typeof resp.data === "string" ? JSON.parse(resp.data) : resp.data
+    let data: Record<string, unknown>
+    try {
+      data = typeof resp.data === "string" ? JSON.parse(resp.data) : resp.data
+    } catch {
+      throw new Error(`Failed to parse mobileconfig response (HTTP ${resp.status})`)
+    }
     this.passwordKey = parsePasswordKeyFromConfig(data)
     if (!this.passwordKey) {
       throw new Error("Failed to fetch password encryption key")
@@ -385,13 +386,13 @@ export class InstagramRegistration {
     this.updateState(resp)
   }
 
-  /** Step 2: Expose NTM experiment */
+  /** Step 2: Expose NTM experiment (async_action endpoint) */
   private async step2(): Promise<void> {
     this.onStep("step2_expose", "Exposing NTM experiment")
-    const resp = await postGraphqlBloks(
+    const resp = await postAsyncAction(
       this.client,
       this.headers(),
-      "com.bloks.www.bloks.caa.register.ntm.expose_experiment",
+      "com.bloks.www.bloks.caa.reg.async.expose_ntm_experiment.async",
       {
         ...this.commonClientParams(),
       },
@@ -462,18 +463,25 @@ export class InstagramRegistration {
     this.updateState(resp3)
   }
 
-  /** Step 4 (email): Send confirmation email */
+  /** Step 4 (email): Send confirmation email (async_action endpoint) */
   private async step4Email(): Promise<void> {
     this.onStep("step4_send_email", "Sending confirmation email")
-    const resp = await postGraphqlBloks(
+    const resp = await postAsyncAction(
       this.client,
       this.headers(),
-      "com.bloks.www.bloks.caa.register.ntm.send_confirmation_email",
+      "com.bloks.www.bloks.caa.reg.send_confirmation_email.async",
       {
         ...this.commonClientParams(),
-        email: this.email,
+        machine_id: this.machineId,
+        cloud_trust_token: this.cloudTrustToken,
+        contactpoint: this.email,
       },
-      this.commonServerParams(),
+      {
+        ...this.commonServerParams(),
+        flow_info: this.flowInfo(),
+        reg_info: JSON.stringify(this.regInfo()),
+        current_step: 0,
+      },
     )
     this.updateState(resp)
   }

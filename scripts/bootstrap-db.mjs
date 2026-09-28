@@ -262,6 +262,7 @@ CREATE TABLE IF NOT EXISTS ig_autoreg_logs (
   proxy text NOT NULL DEFAULT '',
   method text NOT NULL DEFAULT 'email',
   step text NOT NULL DEFAULT '',
+  step_detail text NOT NULL DEFAULT '',
   status text NOT NULL DEFAULT 'running',
   error text NOT NULL DEFAULT '',
   autoreg_account_id integer,
@@ -349,6 +350,9 @@ async function main() {
   // Per-account anti-fingerprint isolation: virtual clock offset and PRNG seed.
   await client.query(`ALTER TABLE ig_accounts ADD COLUMN IF NOT EXISTS clock_offset_ms integer NOT NULL DEFAULT 0;`)
   await client.query(`ALTER TABLE ig_accounts ADD COLUMN IF NOT EXISTS prng_seed text NOT NULL DEFAULT '';`)
+
+  // Autoreg log step detail (progress info separate from error messages).
+  await client.query(`ALTER TABLE ig_autoreg_logs ADD COLUMN IF NOT EXISTS step_detail text NOT NULL DEFAULT '';`)
 
     // Per-run concurrency (how many accounts run in parallel). Warm up and
     // publications store it on their job row; workflows store it on the Start

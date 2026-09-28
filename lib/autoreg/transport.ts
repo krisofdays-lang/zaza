@@ -272,30 +272,58 @@ export async function postGraphqlBloks(
   serverParams: Record<string, unknown>,
 ): Promise<AxiosResponse> {
   const isAsync = actionId.endsWith(".async")
-  const docId = isAsync ? CLIENT_DOC_ID_ACTION : CLIENT_DOC_ID_APP
+  const resolvedDocId = isAsync ? CLIENT_DOC_ID_ACTION : CLIENT_DOC_ID_APP
+  const friendlyName = isAsync
+    ? `BKActionRootQuery-${actionId}`
+    : `BKAppRootQuery-${actionId}`
+  const rootFieldName = isAsync ? "bloks_action" : "bloks_app"
+
+  const inner = {
+    server_params: serverParams,
+    client_input_params: params,
+  }
+  const paramsStr = JSON.stringify({ params: JSON.stringify(inner) })
 
   const variables = JSON.stringify({
-    client_input_params: params,
-    server_input_params: serverParams,
-    bk_client_context: BK_CONTEXT,
-    bloks_action: actionId,
+    bk_context: BK_CONTEXT,
+    params: {
+      params: paramsStr,
+      bloks_versioning_id: headers["x-bloks-version-id"] || PINNED_BLOKS_VERSION_ID,
+      app_id: actionId,
+      infra_params: { device_id: headers["x-ig-device-id"] || "" },
+    },
   })
 
-  const body = new URLSearchParams({
+  const form: Record<string, string> = {
+    method: "post",
+    pretty: "false",
+    format: "json",
+    server_timestamps: "true",
+    locale: "en_US",
+    purpose: "fetch",
+    fb_api_req_friendly_name: friendlyName,
+    client_doc_id: resolvedDocId,
+    enable_canonical_naming: "true",
+    enable_canonical_variable_overrides: "true",
+    enable_canonical_naming_ambiguous_type_prefixing: "true",
     variables,
-    doc_id: docId,
-  }).toString()
+  }
+
+  const body = new URLSearchParams(form).toString()
 
   return client.post(`${BASE_URL}/graphql_www`, body, {
     headers: {
       ...headers,
-      "x-fb-friendly-name": isAsync ? "BKActionRootQuery" : "BKAppRootQuery",
+      "x-fb-friendly-name": friendlyName,
+      "x-root-field-name": rootFieldName,
+      "x-graphql-client-library": "pando",
+      "x-graphql-request-purpose": "fetch",
     },
   })
 }
 
 // ── Transport: POST async_action ─────────────────────────────────────────
-// Used for the final step10 (create account) which goes through bloks/async_action.
+// Used for steps that go through bloks/async_action (step2, step4, step10).
 
 export async function postAsyncAction(
   client: AxiosInstance,
@@ -304,21 +332,24 @@ export async function postAsyncAction(
   params: Record<string, unknown>,
   serverParams: Record<string, unknown>,
 ): Promise<AxiosResponse> {
-  const body = new URLSearchParams({
+  const body = signedBody({
     params: JSON.stringify({
+      server_params: serverParams,
       client_input_params: params,
-      server_input_params: serverParams,
-      bk_client_context: BK_CONTEXT,
     }),
-  }).toString()
-
-  // action_id without the .async suffix for the URL path
-  const cleanId = actionId.replace(/\.async$/, "")
+    bloks_versioning_id: headers["x-bloks-version-id"] || PINNED_BLOKS_VERSION_ID,
+    bk_client_context: JSON.stringify(BK_CONTEXT),
+  })
 
   return client.post(
-    `${BASE_URL}/api/v1/bloks/async_action/${PINNED_IG_APP_ID}/${cleanId}/`,
+    `${BASE_URL}/api/v1/bloks/async_action/${actionId}/`,
     body,
-    { headers },
+    {
+      headers: {
+        ...headers,
+        "x-fb-friendly-name": "bloks/async_action/",
+      },
+    },
   )
 }
 
@@ -365,70 +396,30 @@ export function parseBloksResponse(resp: AxiosResponse): ParsedResponse {
   return result
 }
 
-/** Extract reg_context from bloks response using multiple strategies. */
-export function extractRegContext(resp: AxiosResponse): Record<string, unknown> | null {
+/** Extract reg_context string from bloks response using multiple strategies. */
+export function extractRegContext(resp: AxiosResponse): string | null {
   const raw = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data)
+  if (!raw) return null
 
-  // Strategy 1: Look for reg_context as flat JSON in response
-  try {
-    const json = typeof resp.data === "string" ? JSON.parse(resp.data) : resp.data
-    const str = JSON.stringify(json)
-
-    // Look for "reg_context" key
-    const rcMatch = /"reg_context"\s*:\s*"([^"]*)"/.exec(str)
-    if (rcMatch) {
-      try {
-        return JSON.parse(rcMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\"))
-      } catch {
-        return { raw: rcMatch[1] }
-      }
-    }
-  } catch {}
-
-  // Strategy 2: After "logged_out", look for bloks template JSON
-  const loggedOutIdx = raw.indexOf("logged_out")
-  if (loggedOutIdx !== -1) {
-    const after = raw.slice(loggedOutIdx)
-    const braceIdx = after.indexOf("{")
-    if (braceIdx !== -1) {
-      try {
-        // Try to parse the JSON starting from the first brace
-        let depth = 0
-        let end = braceIdx
-        for (let i = braceIdx; i < after.length; i++) {
-          if (after[i] === "{") depth++
-          else if (after[i] === "}") {
-            depth--
-            if (depth === 0) { end = i + 1; break }
-          }
-        }
-        const candidate = after.slice(braceIdx, end)
-        return JSON.parse(candidate)
-      } catch {}
-    }
+  // Strategy 1: flat JSON field with various escape levels
+  const jsonPatterns = [
+    /\\\\"reg_context\\\\":\\\\"([^"\\]{20,})\\\\"/g,
+    /\\"reg_context\\":\\"([^"\\]{20,})\\"/g,
+    /"reg_context":"([^"]{20,})"/g,
+  ]
+  for (const pat of jsonPatterns) {
+    const matches = [...raw.matchAll(pat)].map((m) => m[1])
+    if (matches.length) return matches.reduce((a, b) => (a.length >= b.length ? a : b))
   }
 
-  // Strategy 3: Look for |regm marker
-  const regmIdx = raw.indexOf("|regm")
-  if (regmIdx !== -1) {
-    const before = raw.slice(0, regmIdx)
-    const lastBrace = before.lastIndexOf("{")
-    if (lastBrace !== -1) {
-      try {
-        let depth = 0
-        let start = lastBrace
-        for (let i = lastBrace; i < raw.length; i++) {
-          if (raw[i] === "{") depth++
-          else if (raw[i] === "}") {
-            depth--
-            if (depth === 0) {
-              return JSON.parse(raw.slice(start, i + 1))
-            }
-          }
-        }
-      } catch {}
-    }
-  }
+  // Strategy 2: bloks template — token after "logged_out", ending with |regm
+  const bloksMatch = /logged_out[\\"\s]+([A-Za-z0-9_\-][A-Za-z0-9_\-\s]{200,}\|regm)/.exec(raw)
+  if (bloksMatch) return bloksMatch[1].replace(/\s+/g, "")
+
+  // Strategy 3: fallback — single token ending with |regm
+  const candidates = [...raw.matchAll(/([A-Za-z0-9_\-][A-Za-z0-9_\-\s]{200,}\|regm)/g)]
+    .map((m) => m[1].replace(/\s+/g, ""))
+  if (candidates.length === 1) return candidates[0]
 
   return null
 }
