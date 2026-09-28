@@ -70,6 +70,17 @@ export function AutoregView({
 
   // ── Polling for live updates ─────────────────────────────────────────
   const isRunning = job?.status === "running"
+  const [wasRunning, setWasRunning] = useState(false)
+
+  useEffect(() => {
+    if (isRunning) {
+      setWasRunning(true)
+    } else if (wasRunning) {
+      setWasRunning(false)
+      listAutoregAccounts().then(setAccounts)
+      if (job?.jobId) listAutoregLogs(job.jobId).then(setLogs)
+    }
+  }, [isRunning, wasRunning, job?.jobId])
 
   useEffect(() => {
     if (!isRunning) return

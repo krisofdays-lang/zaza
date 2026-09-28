@@ -969,48 +969,94 @@ export class InstagramRegistration {
 
   /** Step 9: Set username (comes after name in the flow) */
   private async step9Username(): Promise<void> {
-    this.onStep("step9_username", `Setting username: ${this.username}`)
+    const maxAttempts = 5
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      this.onStep("step9_username", `Setting username: ${this.username} (attempt ${attempt + 1})`)
 
-    const regInfo = this.regInfoWithAccumulated({
-      full_name: this.fullName,
-      last_name: this.lastName,
-      screen_visited: [
-        "CAA_REG_CONTACT_POINT_PHONE",
-        "CAA_REG_CONTACT_POINT_EMAIL",
-        "CAA_REG_CONFIRMATION_SCREEN",
-        "CAA_REG_PASSWORD",
-        "bloks.caa.reg.birthday",
-        "CAA_REG_IG_NAME_SCREEN",
-        "CAA_REG_USERNAME",
-      ],
-    })
+      const regInfo = this.regInfoWithAccumulated({
+        full_name: this.fullName,
+        last_name: this.lastName,
+        screen_visited: [
+          "CAA_REG_CONTACT_POINT_PHONE",
+          "CAA_REG_CONTACT_POINT_EMAIL",
+          "CAA_REG_CONFIRMATION_SCREEN",
+          "CAA_REG_PASSWORD",
+          "bloks.caa.reg.birthday",
+          "CAA_REG_IG_NAME_SCREEN",
+          "CAA_REG_USERNAME",
+        ],
+      })
 
-    const resp = await postGraphqlBloks(
-      this.client,
-      this.headers(),
-      "com.bloks.www.bloks.caa.reg.username.async",
-      {
-        ...this.commonClientParams(),
-        zero_balance_state: "",
-        accounts_list: [],
-        cloud_trust_token: this.cloudTrustToken,
-        validation_text: this.username,
-        username: this.username,
-      },
-      this.commonServerParams({
-        reg_context: this.regContext || "",
-        flow_info: this.flowInfo(),
-        reg_info: regInfo,
-        current_step: 8,
-        action: 1,
-        post_tos: 0,
-        text_input_id: Math.floor(Math.random() * 9e14) + 1e14,
-        suggestions_container_id: Math.floor(Math.random() * 9e14) + 1e14,
-        screen_id: Math.floor(Math.random() * 9e14) + 1e14,
-        input_id: Math.floor(Math.random() * 9e14) + 1e14,
-      }),
-    )
-    this.updateState(resp)
+      const resp = await postGraphqlBloks(
+        this.client,
+        this.headers(),
+        "com.bloks.www.bloks.caa.reg.username.async",
+        {
+          ...this.commonClientParams(),
+          zero_balance_state: "",
+          accounts_list: [],
+          cloud_trust_token: this.cloudTrustToken,
+          validation_text: this.username,
+          username: this.username,
+        },
+        this.commonServerParams({
+          reg_context: this.regContext || "",
+          flow_info: this.flowInfo(),
+          reg_info: regInfo,
+          current_step: 8,
+          action: 1,
+          post_tos: 0,
+          text_input_id: Math.floor(Math.random() * 9e14) + 1e14,
+          suggestions_container_id: Math.floor(Math.random() * 9e14) + 1e14,
+          screen_id: Math.floor(Math.random() * 9e14) + 1e14,
+          input_id: Math.floor(Math.random() * 9e14) + 1e14,
+        }),
+      )
+      this.updateState(resp)
+
+      const raw = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data)
+      const low = raw.toLowerCase()
+
+      const isTaken = low.includes("username_is_taken") ||
+        low.includes("username is not available") ||
+        low.includes("username_not_available") ||
+        low.includes("isn't available") ||
+        low.includes("already taken")
+
+      if (!isTaken) return
+
+      this.onStep("step9_username", `Username "${this.username}" is taken, trying alternative`)
+
+      const suggested = this.extractSuggestedUsername(raw)
+      if (suggested) {
+        this.username = suggested
+      } else {
+        this.username = generateUsername(this.firstName, this.lastName)
+      }
+
+      if (attempt < maxAttempts - 1) await this.stepDelay()
+    }
+    this.onStep("step9_username", `Using username after ${maxAttempts} attempts: ${this.username}`)
+  }
+
+  private extractSuggestedUsername(raw: string): string | null {
+    const patterns = [
+      /"username_suggestions"\s*:\s*\[([^\]]+)\]/,
+      /\\"username_suggestions\\"\s*:\s*\[([^\]]+)\]/,
+      /"suggestions"\s*:\s*\[([^\]]+)\]/,
+    ]
+    for (const pat of patterns) {
+      const m = pat.exec(raw)
+      if (m) {
+        const suggestions = m[1].match(/"([^"]+)"/g)
+          ?.map(s => s.replace(/"/g, "").replace(/\\\\/g, ""))
+          .filter(s => s.length >= 3 && s.length <= 30 && /^[a-z0-9._]+$/i.test(s))
+        if (suggestions?.length) {
+          return suggestions[Math.floor(Math.random() * suggestions.length)]
+        }
+      }
+    }
+    return null
   }
 
   /** Step 10: Create account (uses async_action endpoint) */
@@ -1394,31 +1440,53 @@ export class InstagramRegistration {
       // Step 10: create account
       this.checkCancelled()
       await this.step10CreateAccount()
+
+      // ── Account exists on Instagram from this point ─────────────────
+      // Do NOT throw on cancellation — the account is real and must be saved.
+      // If cancelled, skip NUX/warmup gracefully.
+
+      if (this.cancelled) {
+        this.onStep("done", `Account created (skipped NUX — cancelled): ${this.username}`)
+        return this.buildResult(true)
+      }
+
       await this.stepDelay()
 
       // ── Phase 4: NUX completion ─────────────────────────────────────
       // Required to transition account out of partially_created state.
       // Without APPROVED from consent, the account gets banned in ~30 min.
-      this.checkCancelled()
       let nuxConsentReached = false
-      try {
-        await this.nuxProfileSkip()
-        await sleep(3000)
-        await this.nuxRegTransition()
-        await sleep(3000)
-        nuxConsentReached = true
-        await this.nuxPrivacyConsent()
-      } catch (e) {
-        this.onStep("nux_warning", `NUX partial: ${(e as Error).message}`)
+      if (!this.cancelled) {
+        try {
+          await this.nuxProfileSkip()
+          await sleep(3000)
+          if (!this.cancelled) {
+            await this.nuxRegTransition()
+            await sleep(3000)
+          }
+          if (!this.cancelled) {
+            nuxConsentReached = true
+            await this.nuxPrivacyConsent()
+          }
+        } catch (e) {
+          const msg = (e as Error).message
+          if (msg === "Registration cancelled") {
+            this.onStep("nux_warning", "NUX skipped — cancelled")
+          } else {
+            this.onStep("nux_warning", `NUX partial: ${msg}`)
+          }
+        }
       }
 
       // ── Phase 5: Warmup ─────────────────────────────────────────────
-      await this.warmup()
+      if (!this.cancelled) {
+        await this.warmup()
+      }
 
       // Gate final success on APPROVED: only fully onboarded accounts
       // are considered successful. But if consent was never reached
-      // (earlier NUX step threw), don't reject based on a flag we
-      // never got to set.
+      // (earlier NUX step threw or cancelled), don't reject based on a
+      // flag we never got to set.
       if (nuxConsentReached && !this.nuxConsentApproved) {
         this.onStep("not_approved", "Account created but consent not APPROVED — partially_created")
         return this.buildResult(false, "NUX consent not approved — account partially_created")

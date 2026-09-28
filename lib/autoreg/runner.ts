@@ -304,7 +304,7 @@ async function runSingleRegistration(
     }
   } catch (err) {
     const msg = (err as Error).message
-    const wasCancelled = msg === "Registration cancelled" || isCancelled()
+    const wasCancelled = msg === "Registration cancelled"
     await db
       .update(igAutoregLogs)
       .set({
