@@ -1,0 +1,195 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: var(--font-geist-sans), 'Geist Fallback';
+  --font-mono: var(--font-geist-mono), 'Geist Mono Fallback';
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  color-scheme: dark;
+  --background: oklch(0.16 0.006 300);
+  --foreground: oklch(0.97 0.003 300);
+  --card: oklch(0.205 0.008 300);
+  --card-foreground: oklch(0.97 0.003 300);
+  --popover: oklch(0.205 0.008 300);
+  --popover-foreground: oklch(0.97 0.003 300);
+  --primary: oklch(0.64 0.22 9);
+  --primary-foreground: oklch(0.99 0.01 350);
+  --secondary: oklch(0.27 0.012 300);
+  --secondary-foreground: oklch(0.97 0.003 300);
+  --muted: oklch(0.25 0.01 300);
+  --muted-foreground: oklch(0.7 0.01 300);
+  --accent: oklch(0.55 0.16 295);
+  --accent-foreground: oklch(0.99 0.01 300);
+  --destructive: oklch(0.62 0.21 22);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.64 0.22 9);
+  --chart-1: oklch(0.64 0.22 9);
+  --chart-2: oklch(0.55 0.16 295);
+  --chart-3: oklch(0.78 0.16 70);
+  --chart-4: oklch(0.62 0.18 200);
+  --chart-5: oklch(0.7 0.18 40);
+  --radius: 0.75rem;
+  --sidebar: oklch(0.185 0.007 300);
+  --sidebar-foreground: oklch(0.97 0.003 300);
+  --sidebar-primary: oklch(0.64 0.22 9);
+  --sidebar-primary-foreground: oklch(0.99 0.01 350);
+  --sidebar-accent: oklch(0.27 0.012 300);
+  --sidebar-accent-foreground: oklch(0.97 0.003 300);
+  --sidebar-border: oklch(1 0 0 / 9%);
+  --sidebar-ring: oklch(0.64 0.22 9);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@layer utilities {
+  .ig-gradient {
+    background-image: linear-gradient(
+      45deg,
+      #feda75 0%,
+      #fa7e1e 25%,
+      #d62976 50%,
+      #962fbf 75%,
+      #4f5bd5 100%
+    );
+    /* Clip the gradient to the padding box so a (often transparent) 1px border
+       doesn't let the fill bleed under the rounded corners — that bleed is what
+       made the corners of active "subsection" pills look crooked/jagged. For
+       borderless usages the padding box equals the border box, so this is a
+       no-op there. */
+    background-clip: padding-box;
+  }
+  .ig-gradient-text {
+    background-image: linear-gradient(45deg, #fa7e1e, #d62976 45%, #962fbf 80%, #4f5bd5);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  /* Animated version of the Instagram gradient — slowly drifts the hues. */
+  .ig-gradient-animated {
+    background-image: linear-gradient(
+      45deg,
+      #feda75 0%,
+      #fa7e1e 25%,
+      #d62976 50%,
+      #962fbf 75%,
+      #4f5bd5 100%
+    );
+    background-size: 220% 220%;
+    animation: ig-flow 8s ease infinite;
+  }
+  /* Card with a gradient border drawn via padding-box/border-box layering. */
+  .ig-border {
+    background:
+      linear-gradient(var(--card), var(--card)) padding-box,
+      linear-gradient(135deg, #feda75, #fa7e1e, #d62976, #962fbf, #4f5bd5) border-box;
+    border: 1px solid transparent;
+  }
+  /* Subtle gradient glow used behind hero/stat elements. */
+  .ig-glow {
+    box-shadow: 0 0 0 1px oklch(1 0 0 / 6%), 0 18px 40px -24px #d62976;
+  }
+}
+
+@keyframes ig-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Pulsing "radar" outline for the workflow node that's currently executing.
+   The colour comes from --node-active (set to the node's category colour). */
+@keyframes node-active-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--node-active, #fa7e1e) 65%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 12px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.node-active-pulse {
+  animation: node-active-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Section/route entrance animation, replayed on every navigation.
+   IMPORTANT: this animates opacity ONLY — no `transform`. This element wraps
+   every route (see PageTransition), including the workflow editor's React Flow
+   canvas. Any CSS `transform` on an ancestor (even an identity matrix left
+   behind after a translate animation) establishes a containing block that makes
+   Chromium silently swallow the native HTML5 `drop` event, which breaks dragging
+   blocks from the palette onto the canvas. Keeping this transform-free avoids
+   that entirely. */
+@keyframes section-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-section-in {
+  animation: section-in 0.35s ease-out backwards;
+}

@@ -1,0 +1,23 @@
+{
+  "_comment": "Byte-exact iOS Instagram TLS ClientHello profiles, keyed by app-version prefix. Transcribed from a real rvictl + tshark capture. Extension ORDER matters and must match the JA3 fullstring exactly. The 437 profile below is the FULL-handshake shape (7 extensions, JA4 t13d0207h2); pre_shared_key (ext 41 -> t13d0208) only appears on session resumption and is added dynamically by the TLS stack, never hardcoded.",
+  "437": {
+    "note": "iOS / Instagram build 437 — captured (JA3: 771,4865-255,0-16-43-51-45-10-13-41,29-23)",
+    "ja4": "t13d0207h2",
+    "cipher_suites": ["0x1301", "0x00ff"],
+    "extension_order": [
+      "server_name",
+      "alpn",
+      "supported_versions",
+      "key_share",
+      "psk_key_exchange_modes",
+      "supported_groups",
+      "signature_algorithms"
+    ],
+    "supported_groups": ["x25519", "secp256r1"],
+    "signature_algorithms": ["0x0403", "0x0503", "0x0806", "0x0805", "0x0804", "0x0601", "0x0501", "0x0401"],
+    "alpn": ["h2"],
+    "key_share_groups": ["x25519"],
+    "psk_key_exchange_modes": ["psk_dhe_ke"],
+    "supported_versions": ["1.3"]
+  }
+}

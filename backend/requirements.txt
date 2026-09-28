@@ -1,0 +1,12 @@
+# Instagram request service (FastAPI). Pinned to musl-wheel-friendly versions so
+# the Docker alpine build installs prebuilt wheels instead of compiling.
+# NOTE: pydantic-core is the only native dep here (Rust). The Alpine base image's
+# python3 now ships CPython 3.14, and pydantic-core only publishes cp314 musl
+# wheels from 2.41.4 onward (pulled in by pydantic 2.12.x). Keep pydantic >= 2.12
+# so `pip install` grabs the prebuilt wheel instead of compiling from source
+# (which fails: the runtime image has no C linker / Rust toolchain).
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx[http2]==0.28.1
+pydantic==2.12.3
+python-multipart==0.0.20

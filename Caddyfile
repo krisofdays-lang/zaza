@@ -1,0 +1,45 @@
+# Caddy config for the public HTTPS entrypoint.
+#
+# Caddy automatically obtains and renews a Let's Encrypt certificate for
+# {$DOMAIN}, so all you do is point your domain's DNS A record at this server
+# and set DOMAIN (and optionally ACME_EMAIL) in .env. Then the app is reachable
+# at https://<your-domain> — no port number, HTTP is auto-redirected to HTTPS.
+
+{
+	# ACME account email for certificate expiry notices. Empty is allowed.
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy {
+		# Resolve the `app` compose service via Docker's embedded DNS and
+		# re-resolve every few seconds. This picks up replicas as they come and
+		# go during a rolling update (containers are added, then old ones removed).
+		dynamic a {
+			name app
+			port 3000
+			refresh 3s
+			resolvers 127.0.0.11
+		}
+
+		# Sticky sessions: pin each client to one replica via a cookie. Without
+		# this, a page rendered by one replica can POST its Server Action to a
+		# different replica and fail with "Failed to find Server Action". Falls
+		# back to round_robin for the first request / when a replica goes away.
+		lb_policy cookie lb
+
+		# If the chosen replica is being torn down mid-deploy, keep retrying other
+		# replicas for up to 20s instead of returning an error to the user. This is
+		# what makes rolling updates invisible to clients.
+		lb_try_duration 20s
+		lb_try_interval 500ms
+
+		# Passive health: pull a replica out of rotation briefly after failures.
+		fail_duration 10s
+
+		# Don't retry non-idempotent writes that already reached the backend.
+		lb_retries 2
+	}
+}

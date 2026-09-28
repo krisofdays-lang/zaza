@@ -1,0 +1,105 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-orbit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orbit}
+      POSTGRES_DB: ${POSTGRES_DB:-orbit}
+    volumes:
+      # Named volume => the database survives `docker compose up --build`,
+      # container removal, and code updates. Only `down -v` would wipe it.
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-orbit} -d ${POSTGRES_DB:-orbit}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Run more than one replica so a rolling update always leaves a live one
+    # serving traffic. Caddy load-balances across them (see Caddyfile). The
+    # rolling-update script overrides this with --scale during a deploy.
+    deploy:
+      replicas: ${APP_REPLICAS:-2}
+    depends_on:
+      db:
+        condition: service_healthy
+    # No host port: Caddy is the only public entrypoint and proxies to :3000 on
+    # the private network. Expose documents the port for other services.
+    expose:
+      - "3000"
+    # Caddy needs a readiness signal to route only to healthy replicas, and the
+    # rolling-update script waits on this before retiring old replicas.
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 4s
+      retries: 5
+      start_period: 40s
+    # Give in-flight requests time to finish before a replica is killed.
+    stop_grace_period: 30s
+    environment:
+      # Internal connection to the db service. SSL disabled for the private
+      # container network. Point DATABASE_URL at an external managed Postgres
+      # instead if you prefer (and set DATABASE_SSL=require).
+      DATABASE_URL: ${DATABASE_URL:-postgres://orbit:orbit@db:5432/orbit}
+      DATABASE_SSL: ${DATABASE_SSL:-disable}
+      # MUST be a long random string in production (e.g. `openssl rand -hex 32`).
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      # Stable key shared by ALL replicas so Server Actions rendered by one
+      # replica validate on another, and survive rebuilds. Without it Next.js
+      # generates a fresh key per build => "Failed to find Server Action" errors
+      # across replicas and after every redeploy. Generate: `openssl rand -hex 32`.
+      NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:?set NEXT_SERVER_ACTIONS_ENCRYPTION_KEY in .env}
+      # The owner license seeded on first boot (your personal key).
+      OWNER_LICENSE_KEY: ${OWNER_LICENSE_KEY:-a4726d28-30f2-b4aa-5643-adc4c88f0606}
+      MEDIA_ROOT: /data/media
+      NODE_ENV: production
+      # uTLS fingerprint sidecar. The entrypoint launches it on loopback and
+      # sets TLS_PROXY_URL automatically, so these are optional overrides:
+      #   TLS_PROXY_URL: http://127.0.0.1:8443   # where Node sends traffic
+      #   TLS_PROXY_LISTEN: 127.0.0.1:8443        # where the sidecar binds
+      #   TLS_PROXY_FINGERPRINTS: /data/fingerprints.json  # captured JA4 profile
+      #   TLS_PROXY_VERBOSE: "1"                   # per-request diagnostics
+      TLS_PROXY_VERBOSE: ${TLS_PROXY_VERBOSE:-0}
+    volumes:
+      # Uploaded media persists across rebuilds/updates. Shared by all replicas.
+      - media-data:/data/media
+      # Drop a real captured fingerprint here to get a byte-exact JA4. The
+      # entrypoint auto-detects /data/fingerprints.json. See tls-proxy/README.md.
+      # - ./fingerprints.json:/data/fingerprints.json:ro
+
+  # Public entrypoint: terminates HTTPS for your domain with automatic
+  # Let's Encrypt certificates and reverse-proxies to the app replicas. This is
+  # what makes the site reachable at https://<your-domain> instead of :3000.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3 (QUIC)
+    environment:
+      # Your domain (e.g. app.example.com). REQUIRED — the cert is issued for it.
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      # Email Let's Encrypt uses for expiry notices. Optional but recommended.
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Persist issued certificates across restarts so you don't hit Let's
+      # Encrypt rate limits on every redeploy.
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  db-data:
+  media-data:
+  caddy-data:
+  caddy-config:
