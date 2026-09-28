@@ -54,9 +54,10 @@ export function AccountsTable({
   // is being refreshed (refreshingIds is non-empty). Merges fresh status, avatar
   // and username into the initial props so updates appear without a page refresh.
   const [statusOverrides, setStatusOverrides] = useState<Map<number, AccountStatus>>(new Map())
-  // Maps account ID → { snapshot of lastCheckedAt at click, start time for timeout }.
-  // Polling auto-clears an ID once lastCheckedAt differs from the snapshot.
-  const [refreshingIds, setRefreshingIds] = useState<Map<number, { snapshot: string | null; start: number }>>(new Map())
+  // Maps account ID → { snapshot of lastCheckedAt (ms) and status at click,
+  // start time for timeout }. Polling auto-clears an ID once lastCheckedAt
+  // differs from the snapshot OR the status field changes.
+  const [refreshingIds, setRefreshingIds] = useState<Map<number, { snapshotMs: number | null; snapshotStatus: string | null; start: number }>>(new Map())
   const hiddenRef = useRef(false)
   // Map account id → toast id so we can dismiss loading toasts on settlement.
   const loadingToastsRef = useRef<Map<number, string | number>>(new Map())
@@ -75,7 +76,7 @@ export function AccountsTable({
       const now = Date.now()
       setRefreshingIds((s) => {
         const next = new Map(s)
-        newIds.forEach((id) => next.set(id, { snapshot: null, start: now }))
+        newIds.forEach((id) => next.set(id, { snapshotMs: null, snapshotStatus: null, start: now }))
         return next
       })
     }
@@ -85,70 +86,88 @@ export function AccountsTable({
     if (!isPolling) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | null = null
+    const toMs = (v: unknown): number | null => {
+      if (v == null) return null
+      const d = v instanceof Date ? v : new Date(v as string | number)
+      const t = d.getTime()
+      return Number.isFinite(t) ? t : null
+    }
     const tick = async () => {
       if (cancelled) return
       if (hiddenRef.current) {
         timer = setTimeout(tick, 3000)
         return
       }
+      const now = Date.now()
+      const settled: { id: number; status: AccountStatus | undefined }[] = []
+      let statusMap: Map<number, AccountStatus> | null = null
       try {
         const fresh = await getAccountStatuses()
         if (cancelled) return
-        const map = new Map<number, AccountStatus>()
-        for (const s of fresh) map.set(s.id, s)
-        setStatusOverrides(map)
-        // Determine which IDs have settled (lastCheckedAt changed from the
-        // snapshot we took at click time) or timed out, and clear them.
-        const now = Date.now()
-        const settled: { id: number; status: AccountStatus | undefined }[] = []
+        statusMap = new Map<number, AccountStatus>()
+        for (const s of fresh) statusMap.set(s.id, s)
+        setStatusOverrides(statusMap)
+        // Determine which IDs have settled: lastCheckedAt changed from the
+        // snapshot (ms precision), OR the status field changed, OR timed out.
         setRefreshingIds((prev) => {
           const next = new Map(prev)
           for (const [id, entry] of prev) {
             if (now - entry.start > 60_000) {
               next.delete(id)
-              settled.push({ id, status: map.get(id) })
+              settled.push({ id, status: statusMap!.get(id) })
               continue
             }
-            const s = map.get(id)
+            const s = statusMap!.get(id)
             if (!s) continue
-            const current = s.lastCheckedAt ? String(s.lastCheckedAt) : null
-            if (current !== null && current !== entry.snapshot) {
+            const currentMs = toMs(s.lastCheckedAt)
+            const statusChanged = s.status != null && s.status !== entry.snapshotStatus
+            if ((currentMs !== null && currentMs !== entry.snapshotMs) || statusChanged) {
               next.delete(id)
               settled.push({ id, status: s })
             }
           }
           return next
         })
-        // Dismiss loading toasts and show completion toasts.
-        if (settled.length > 0) {
-          // Dismiss all loading toasts for settled accounts.
-          const dismissedToastIds = new Set<string | number>()
-          for (const s of settled) {
-            const tid = loadingToastsRef.current.get(s.id)
-            if (tid !== undefined && !dismissedToastIds.has(tid)) {
-              toast.dismiss(tid)
-              dismissedToastIds.add(tid)
+      } catch {
+        // getAccountStatuses failed — still enforce the timeout so toasts
+        // don't hang forever when the server is unreachable.
+        setRefreshingIds((prev) => {
+          const next = new Map(prev)
+          for (const [id, entry] of prev) {
+            if (now - entry.start > 60_000) {
+              next.delete(id)
+              settled.push({ id, status: undefined })
             }
-            loadingToastsRef.current.delete(s.id)
           }
-          for (const s of settled) {
-            const name = s.status?.username ?? `#${s.id}`
-            const st = s.status?.status
-            if (st === "ok" || st === "active" || st === "idle") {
-              toast.success(`Account updated: @${name}`)
-            } else if (st === "checkpoint" || st === "challenge") {
-              toast.error(`Account got UFAC: @${name}`, {
-                description: s.status?.lastError ?? "Challenge required",
-              })
-            } else {
-              toast.error(`Refresh failed: @${name}`, {
-                description: s.status?.lastError ?? st ?? "unknown error",
-              })
-            }
+          return next
+        })
+      }
+      // Dismiss loading toasts and show completion toasts.
+      if (settled.length > 0) {
+        const dismissedToastIds = new Set<string | number>()
+        for (const s of settled) {
+          const tid = loadingToastsRef.current.get(s.id)
+          if (tid !== undefined && !dismissedToastIds.has(tid)) {
+            toast.dismiss(tid)
+            dismissedToastIds.add(tid)
+          }
+          loadingToastsRef.current.delete(s.id)
+        }
+        for (const s of settled) {
+          const name = s.status?.username ?? `#${s.id}`
+          const st = s.status?.status
+          if (st === "ok" || st === "active" || st === "idle") {
+            toast.success(`Account updated: @${name}`)
+          } else if (st === "checkpoint" || st === "challenge") {
+            toast.error(`Account got UFAC: @${name}`, {
+              description: s.status?.lastError ?? "Challenge required",
+            })
+          } else {
+            toast.error(`Refresh failed: @${name}`, {
+              description: s.status?.lastError ?? st ?? "unknown error",
+            })
           }
         }
-      } catch {
-        // ignore transient errors
       }
       if (!cancelled) timer = setTimeout(tick, 3000)
     }
@@ -278,8 +297,9 @@ export function AccountsTable({
 
   function handleRefresh(id: number) {
     const acct = visibleAccounts.find((a) => a.id === id)
-    const snapshot = acct?.lastCheckedAt ? String(acct.lastCheckedAt) : null
-    setRefreshingIds((s) => new Map(s).set(id, { snapshot, start: Date.now() }))
+    const snapshotMs = acct?.lastCheckedAt ? new Date(acct.lastCheckedAt as string | number | Date).getTime() : null
+    const snapshotStatus = acct?.status ?? null
+    setRefreshingIds((s) => new Map(s).set(id, { snapshotMs, snapshotStatus, start: Date.now() }))
     const toastId = toast.loading(`Refreshing @${acct?.username ?? id}…`)
     loadingToastsRef.current.set(id, toastId)
     refreshAccountProfile(id)
@@ -301,8 +321,9 @@ export function AccountsTable({
       const next = new Map(s)
       ids.forEach((id) => {
         const acct = visibleAccounts.find((a) => a.id === id)
-        const snapshot = acct?.lastCheckedAt ? String(acct.lastCheckedAt) : null
-        next.set(id, { snapshot, start: now })
+        const snapshotMs = acct?.lastCheckedAt ? new Date(acct.lastCheckedAt as string | number | Date).getTime() : null
+        const snapshotStatus = acct?.status ?? null
+        next.set(id, { snapshotMs, snapshotStatus, start: now })
       })
       return next
     })

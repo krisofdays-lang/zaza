@@ -732,9 +732,6 @@ export async function refreshAccountProfile(accountId: number) {
     }
   })
 
-  revalidatePath(`/accounts/${accountId}`)
-  revalidatePath("/")
-  revalidatePath("/dashboard")
   return { ok: true, status: 0, accountStatus: "ok" as const, detail: "" }
 }
 

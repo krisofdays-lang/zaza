@@ -50,23 +50,23 @@
 
 :root {
   color-scheme: dark;
-  --background: oklch(0.135 0.008 280);
-  --foreground: oklch(0.96 0.005 280);
-  --card: oklch(0.175 0.01 280);
-  --card-foreground: oklch(0.96 0.005 280);
-  --popover: oklch(0.18 0.012 280);
-  --popover-foreground: oklch(0.96 0.005 280);
+  --background: oklch(0.11 0.014 195);
+  --foreground: oklch(0.96 0.005 195);
+  --card: oklch(0.14 0.016 195 / 80%);
+  --card-foreground: oklch(0.96 0.005 195);
+  --popover: oklch(0.15 0.018 195 / 92%);
+  --popover-foreground: oklch(0.96 0.005 195);
   --primary: oklch(0.64 0.22 9);
   --primary-foreground: oklch(0.99 0.01 350);
-  --secondary: oklch(0.24 0.014 280);
-  --secondary-foreground: oklch(0.96 0.005 280);
-  --muted: oklch(0.22 0.012 280);
-  --muted-foreground: oklch(0.62 0.015 280);
+  --secondary: oklch(0.19 0.016 195);
+  --secondary-foreground: oklch(0.96 0.005 195);
+  --muted: oklch(0.17 0.014 195);
+  --muted-foreground: oklch(0.58 0.018 195);
   --accent: oklch(0.55 0.16 295);
-  --accent-foreground: oklch(0.99 0.01 280);
+  --accent-foreground: oklch(0.99 0.01 195);
   --destructive: oklch(0.62 0.21 22);
-  --border: oklch(1 0.01 280 / 8%);
-  --input: oklch(1 0.01 280 / 10%);
+  --border: oklch(1 0.02 195 / 8%);
+  --input: oklch(1 0.02 195 / 10%);
   --ring: oklch(0.64 0.22 9);
   --chart-1: oklch(0.64 0.22 9);
   --chart-2: oklch(0.55 0.16 295);
@@ -74,16 +74,16 @@
   --chart-4: oklch(0.62 0.18 200);
   --chart-5: oklch(0.7 0.18 40);
   --radius: 0.625rem;
-  --sidebar: oklch(0.155 0.009 280);
-  --sidebar-foreground: oklch(0.96 0.005 280);
+  --sidebar: oklch(0.12 0.015 195 / 90%);
+  --sidebar-foreground: oklch(0.96 0.005 195);
   --sidebar-primary: oklch(0.64 0.22 9);
   --sidebar-primary-foreground: oklch(0.99 0.01 350);
-  --sidebar-accent: oklch(0.24 0.014 280);
-  --sidebar-accent-foreground: oklch(0.96 0.005 280);
-  --sidebar-border: oklch(1 0.01 280 / 7%);
+  --sidebar-accent: oklch(0.19 0.016 195);
+  --sidebar-accent-foreground: oklch(0.96 0.005 195);
+  --sidebar-border: oklch(1 0.02 195 / 7%);
   --sidebar-ring: oklch(0.64 0.22 9);
-  --velvet-glow: oklch(0.55 0.12 295 / 12%);
-  --velvet-glow-strong: oklch(0.55 0.14 295 / 22%);
+  --velvet-glow: oklch(0.45 0.1 195 / 14%);
+  --velvet-glow-strong: oklch(0.5 0.12 195 / 24%);
 }
 
 @layer base {
@@ -91,9 +91,30 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background-color: oklch(0.08 0.012 195);
+    background-image:
+      radial-gradient(ellipse 120% 80% at 50% 10%, oklch(0.16 0.04 190 / 50%) 0%, transparent 60%),
+      radial-gradient(ellipse 80% 60% at 80% 70%, oklch(0.13 0.035 210 / 35%) 0%, transparent 50%),
+      radial-gradient(ellipse 60% 50% at 15% 80%, oklch(0.12 0.03 180 / 30%) 0%, transparent 50%);
+    background-attachment: fixed;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px 256px;
+  }
+  body > * {
+    position: relative;
+    z-index: 1;
   }
   html {
     @apply font-sans;
@@ -153,11 +174,12 @@
       0 0 0 1px var(--border),
       0 1px 2px oklch(0 0 0 / 30%),
       0 0 20px -6px var(--velvet-glow);
+    backdrop-filter: blur(12px);
     transition: box-shadow 0.3s ease;
   }
   .velvet-card:hover {
     box-shadow:
-      0 0 0 1px oklch(1 0.01 280 / 12%),
+      0 0 0 1px oklch(1 0.02 195 / 12%),
       0 2px 8px oklch(0 0 0 / 40%),
       0 0 28px -4px var(--velvet-glow-strong);
   }
@@ -165,7 +187,7 @@
   .velvet-surface {
     background-image: linear-gradient(
       to bottom,
-      oklch(1 0.01 280 / 4%) 0%,
+      oklch(1 0.02 195 / 4%) 0%,
       transparent 60%
     );
   }
@@ -177,6 +199,7 @@
 @layer base {
   [data-slot="card"] {
     box-shadow: 0 0 16px -6px var(--velvet-glow);
+    backdrop-filter: blur(12px);
     transition: box-shadow 0.3s ease;
   }
   [data-slot="card"]:hover {
@@ -184,6 +207,7 @@
   }
   [data-slot="dialog-content"] {
     box-shadow: 0 8px 32px -8px var(--velvet-glow-strong);
+    backdrop-filter: blur(16px);
   }
 }
 
