@@ -74,17 +74,13 @@ export function AutoregView({
   useEffect(() => {
     if (!isRunning) return
     const interval = setInterval(() => {
-      // Refresh job status and logs
       getLatestAutoregJob().then((j) => {
         if (j) setJob(j)
-        if (j && j.status !== "running") {
-          // Job finished — refresh accounts too
-          listAutoregAccounts().then(setAccounts)
-        }
       })
       if (job?.jobId) {
         listAutoregLogs(job.jobId).then(setLogs)
       }
+      listAutoregAccounts().then(setAccounts)
     }, 2_000)
     return () => clearInterval(interval)
   }, [isRunning, job?.jobId])
