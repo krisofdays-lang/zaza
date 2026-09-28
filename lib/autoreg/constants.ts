@@ -76,44 +76,45 @@ export interface IphoneDevice {
   hLogical: number  // logical height
   iosMin: number    // min iOS major
   iosMax: number    // max iOS major (inclusive)
+  ramBytes: number  // physical RAM in bytes
 }
 
 export const IPHONE_DEVICES: IphoneDevice[] = [
-  // A12 — iOS 15–18
-  { model: "iPhone11,8", name: "iPhone XR", res: "828x1792", scale: "2.00", wLogical: 414, hLogical: 896, iosMin: 15, iosMax: 18 },
-  { model: "iPhone11,2", name: "iPhone XS", res: "1125x2436", scale: "3.00", wLogical: 375, hLogical: 812, iosMin: 15, iosMax: 18 },
-  { model: "iPhone11,6", name: "iPhone XS Max", res: "1242x2688", scale: "3.00", wLogical: 414, hLogical: 896, iosMin: 15, iosMax: 18 },
-  // A13
-  { model: "iPhone12,1", name: "iPhone 11", res: "828x1792", scale: "2.00", wLogical: 414, hLogical: 896, iosMin: 15, iosMax: 18 },
-  { model: "iPhone12,3", name: "iPhone 11 Pro", res: "1125x2436", scale: "3.00", wLogical: 375, hLogical: 812, iosMin: 15, iosMax: 18 },
-  { model: "iPhone12,5", name: "iPhone 11 Pro Max", res: "1242x2688", scale: "3.00", wLogical: 414, hLogical: 896, iosMin: 15, iosMax: 18 },
-  // A14
-  { model: "iPhone13,1", name: "iPhone 12 mini", res: "1080x2340", scale: "3.00", wLogical: 360, hLogical: 780, iosMin: 15, iosMax: 18 },
-  { model: "iPhone13,2", name: "iPhone 12", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 15, iosMax: 18 },
-  { model: "iPhone13,3", name: "iPhone 12 Pro", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 15, iosMax: 18 },
-  { model: "iPhone13,4", name: "iPhone 12 Pro Max", res: "1284x2778", scale: "3.00", wLogical: 428, hLogical: 926, iosMin: 15, iosMax: 18 },
-  // A15
-  { model: "iPhone14,4", name: "iPhone 13 mini", res: "1080x2340", scale: "3.00", wLogical: 360, hLogical: 780, iosMin: 15, iosMax: 18 },
-  { model: "iPhone14,5", name: "iPhone 13", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 15, iosMax: 18 },
-  { model: "iPhone14,2", name: "iPhone 13 Pro", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 15, iosMax: 18 },
-  { model: "iPhone14,3", name: "iPhone 13 Pro Max", res: "1284x2778", scale: "3.00", wLogical: 428, hLogical: 926, iosMin: 15, iosMax: 18 },
-  // A15 (14 non-Pro)
-  { model: "iPhone14,7", name: "iPhone 14", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 16, iosMax: 18 },
-  { model: "iPhone14,8", name: "iPhone 14 Plus", res: "1284x2778", scale: "3.00", wLogical: 428, hLogical: 926, iosMin: 16, iosMax: 18 },
-  // A16
-  { model: "iPhone15,2", name: "iPhone 14 Pro", res: "1179x2556", scale: "3.00", wLogical: 393, hLogical: 852, iosMin: 16, iosMax: 18 },
-  { model: "iPhone15,3", name: "iPhone 14 Pro Max", res: "1290x2796", scale: "3.00", wLogical: 430, hLogical: 932, iosMin: 16, iosMax: 18 },
-  // A16 (15 non-Pro)
-  { model: "iPhone15,4", name: "iPhone 15", res: "1179x2556", scale: "3.00", wLogical: 393, hLogical: 852, iosMin: 17, iosMax: 18 },
-  { model: "iPhone15,5", name: "iPhone 15 Plus", res: "1290x2796", scale: "3.00", wLogical: 430, hLogical: 932, iosMin: 17, iosMax: 18 },
-  // A17 Pro
-  { model: "iPhone16,1", name: "iPhone 15 Pro", res: "1179x2556", scale: "3.00", wLogical: 393, hLogical: 852, iosMin: 17, iosMax: 18 },
-  { model: "iPhone16,2", name: "iPhone 15 Pro Max", res: "1290x2796", scale: "3.00", wLogical: 430, hLogical: 932, iosMin: 17, iosMax: 18 },
-  // A18 — shipped on iOS 18 only
-  { model: "iPhone17,3", name: "iPhone 16", res: "1179x2556", scale: "3.00", wLogical: 393, hLogical: 852, iosMin: 18, iosMax: 18 },
-  { model: "iPhone17,4", name: "iPhone 16 Plus", res: "1290x2796", scale: "3.00", wLogical: 430, hLogical: 932, iosMin: 18, iosMax: 18 },
-  { model: "iPhone17,1", name: "iPhone 16 Pro", res: "1206x2622", scale: "3.00", wLogical: 402, hLogical: 874, iosMin: 18, iosMax: 18 },
-  { model: "iPhone17,2", name: "iPhone 16 Pro Max", res: "1320x2868", scale: "3.00", wLogical: 440, hLogical: 956, iosMin: 18, iosMax: 18 },
+  // A12 — iOS 15–18 (3 GB)
+  { model: "iPhone11,8", name: "iPhone XR", res: "828x1792", scale: "2.00", wLogical: 414, hLogical: 896, iosMin: 15, iosMax: 18, ramBytes: 3221225472 },
+  { model: "iPhone11,2", name: "iPhone XS", res: "1125x2436", scale: "3.00", wLogical: 375, hLogical: 812, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
+  { model: "iPhone11,6", name: "iPhone XS Max", res: "1242x2688", scale: "3.00", wLogical: 414, hLogical: 896, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
+  // A13 (4 GB)
+  { model: "iPhone12,1", name: "iPhone 11", res: "828x1792", scale: "2.00", wLogical: 414, hLogical: 896, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
+  { model: "iPhone12,3", name: "iPhone 11 Pro", res: "1125x2436", scale: "3.00", wLogical: 375, hLogical: 812, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
+  { model: "iPhone12,5", name: "iPhone 11 Pro Max", res: "1242x2688", scale: "3.00", wLogical: 414, hLogical: 896, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
+  // A14 (4 GB)
+  { model: "iPhone13,1", name: "iPhone 12 mini", res: "1080x2340", scale: "3.00", wLogical: 360, hLogical: 780, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
+  { model: "iPhone13,2", name: "iPhone 12", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
+  { model: "iPhone13,3", name: "iPhone 12 Pro", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 15, iosMax: 18, ramBytes: 6442450944 },
+  { model: "iPhone13,4", name: "iPhone 12 Pro Max", res: "1284x2778", scale: "3.00", wLogical: 428, hLogical: 926, iosMin: 15, iosMax: 18, ramBytes: 6442450944 },
+  // A15 (4/6 GB)
+  { model: "iPhone14,4", name: "iPhone 13 mini", res: "1080x2340", scale: "3.00", wLogical: 360, hLogical: 780, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
+  { model: "iPhone14,5", name: "iPhone 13", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
+  { model: "iPhone14,2", name: "iPhone 13 Pro", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 15, iosMax: 18, ramBytes: 6442450944 },
+  { model: "iPhone14,3", name: "iPhone 13 Pro Max", res: "1284x2778", scale: "3.00", wLogical: 428, hLogical: 926, iosMin: 15, iosMax: 18, ramBytes: 6442450944 },
+  // A15 (14 non-Pro, 6 GB)
+  { model: "iPhone14,7", name: "iPhone 14", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 16, iosMax: 18, ramBytes: 6442450944 },
+  { model: "iPhone14,8", name: "iPhone 14 Plus", res: "1284x2778", scale: "3.00", wLogical: 428, hLogical: 926, iosMin: 16, iosMax: 18, ramBytes: 6442450944 },
+  // A16 (6 GB)
+  { model: "iPhone15,2", name: "iPhone 14 Pro", res: "1179x2556", scale: "3.00", wLogical: 393, hLogical: 852, iosMin: 16, iosMax: 18, ramBytes: 6442450944 },
+  { model: "iPhone15,3", name: "iPhone 14 Pro Max", res: "1290x2796", scale: "3.00", wLogical: 430, hLogical: 932, iosMin: 16, iosMax: 18, ramBytes: 6442450944 },
+  // A16 (15 non-Pro, 6 GB)
+  { model: "iPhone15,4", name: "iPhone 15", res: "1179x2556", scale: "3.00", wLogical: 393, hLogical: 852, iosMin: 17, iosMax: 18, ramBytes: 6442450944 },
+  { model: "iPhone15,5", name: "iPhone 15 Plus", res: "1290x2796", scale: "3.00", wLogical: 430, hLogical: 932, iosMin: 17, iosMax: 18, ramBytes: 6442450944 },
+  // A17 Pro (8 GB)
+  { model: "iPhone16,1", name: "iPhone 15 Pro", res: "1179x2556", scale: "3.00", wLogical: 393, hLogical: 852, iosMin: 17, iosMax: 18, ramBytes: 8589934592 },
+  { model: "iPhone16,2", name: "iPhone 15 Pro Max", res: "1290x2796", scale: "3.00", wLogical: 430, hLogical: 932, iosMin: 17, iosMax: 18, ramBytes: 8589934592 },
+  // A18 — shipped on iOS 18 only (8 GB)
+  { model: "iPhone17,3", name: "iPhone 16", res: "1179x2556", scale: "3.00", wLogical: 393, hLogical: 852, iosMin: 18, iosMax: 18, ramBytes: 8589934592 },
+  { model: "iPhone17,4", name: "iPhone 16 Plus", res: "1290x2796", scale: "3.00", wLogical: 430, hLogical: 932, iosMin: 18, iosMax: 18, ramBytes: 8589934592 },
+  { model: "iPhone17,1", name: "iPhone 16 Pro", res: "1206x2622", scale: "3.00", wLogical: 402, hLogical: 874, iosMin: 18, iosMax: 18, ramBytes: 8589934592 },
+  { model: "iPhone17,2", name: "iPhone 16 Pro Max", res: "1320x2868", scale: "3.00", wLogical: 440, hLogical: 956, iosMin: 18, iosMax: 18, ramBytes: 8589934592 },
 ]
 
 // Country → locale mapping for geo-aware fingerprinting.

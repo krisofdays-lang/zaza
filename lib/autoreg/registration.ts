@@ -5,6 +5,9 @@ import {
   PINNED_BLOKS_VERSION_ID,
   PINNED_IG_APP_ID,
   PINNED_IG_CAPABILITIES,
+  CLIENT_DOC_ID_APP,
+  CLIENT_DOC_ID_ACTION,
+  BK_CONTEXT,
   STEP_DELAY_MIN_MS,
   STEP_DELAY_MAX_MS,
   CODE_WAIT_TIMEOUT_MS,
@@ -143,6 +146,8 @@ export class InstagramRegistration {
   private csrf = ""
   private rur = ""
   private igUserId = ""
+  private sessionid = ""
+  private region = ""
 
   // Verification clients
   private emailClient: AnyMessageClient | null = null
@@ -492,7 +497,6 @@ export class InstagramRegistration {
   // ── Update state from response ─────────────────────────────────────────
 
   private updateState(resp: AxiosResponse) {
-    // Capture auth headers
     const auth = captureAuthHeaders(resp)
     if (auth.bearer) this.bearer = auth.bearer
     if (auth.mid) this.mid = auth.mid
@@ -500,6 +504,8 @@ export class InstagramRegistration {
     if (auth.dsUserId) this.dsUserId = auth.dsUserId
     if (auth.csrf) this.csrf = auth.csrf
     if (auth.rur) this.rur = auth.rur
+    if (auth.sessionid) this.sessionid = auth.sessionid
+    if (auth.region) this.region = auth.region
 
     const ctx = extractRegContext(resp)
     if (ctx) this.regContext = ctx
@@ -1396,15 +1402,23 @@ export class InstagramRegistration {
   // ── Build result object ────────────────────────────────────────────────
 
   private buildResult(success: boolean, error?: string): RegResult {
+    const iosVer = this.device.iosVersion.replace(/_/g, ".")
+    const dsUid = this.dsUserId ? (
+      /^\d+$/.test(this.dsUserId) ? Number(this.dsUserId) : this.dsUserId
+    ) : ""
+    const tz = this.geo?.timezone || "America/Chicago"
+    const country = this.geo?.country || "US"
+    const locale = this.geo?.locale || "en_US"
+
     const sessionBlob = {
-      saved_at: new Date().toISOString(),
+      saved_at: Math.floor(Date.now() / 1000),
       username: this.username,
       password: this.password,
       totp_seed: "",
       email: this.email,
       session: {
         authorization: this.bearer,
-        ds_user_id: this.dsUserId,
+        ds_user_id: dsUid,
         mid: this.mid,
         csrf: this.csrf,
         www_claim: this.claim,
@@ -1417,7 +1431,7 @@ export class InstagramRegistration {
         pigeon_session: this.pigeonSession,
         fb_anon_id: this.fbAnonId,
         waterfall_id: this.waterfallId,
-        network_bssid: "02:00:00:00:00:00",
+        network_bssid: "",
         reg_flow_id: "",
         aac_jid: this.aacJid,
         machine_id: this.machineId,
@@ -1434,16 +1448,86 @@ export class InstagramRegistration {
         ua_version: PINNED_IG_VERSION,
         device_model: this.device.model,
         os_version: this.device.iosVersion,
+        os_ver_dotted: iosVer,
         os_build: this.device.iosBuild,
-        locale: this.geo?.locale || "en_US",
-        country: this.geo?.country || "US",
-        tz_name: this.geo?.timezone || "America/Chicago",
+        locale,
+        country,
+        tz_name: tz,
         scale: this.device.scale,
         resolution: this.device.resolution,
         w_logical: this.device.wLogical,
         h_logical: this.device.hLogical,
+        ios_ver: iosVer,
       },
-      cookies: {},
+      cookies: [] as string[],
+      ios_az_state: {
+        fingerprint: {
+          app_session: {
+            pigeon_session: this.pigeonSession,
+            analytics_session_id: this.waterfallId,
+            bandwidth_type: this.connection.ig_connection_type,
+            bandwidth_estimate: this.connection.ig_bandwidth_speed_kbps,
+            aac_jid: this.aacJid,
+            aac_cs: this.aacCs,
+            aac_init_ts: this.aacInitTs,
+          },
+          installation: {
+            device_id: this.guid,
+            family_device_id: this.familyDeviceId,
+            phone_id: this.phoneId,
+            fb_anon_id: this.fbAnonId,
+            waterfall_id: this.waterfallId,
+            machine_id: this.machineId,
+            cloud_trust_token: this.cloudTrustToken,
+            marketing_name: this.device.name,
+            ram_bytes: this.device.ramBytes,
+            ios_version: this.device.iosVersion,
+            ios_build: this.device.iosBuild,
+          },
+          profile: {
+            doc_id_app: CLIENT_DOC_ID_APP,
+            doc_id_action: CLIENT_DOC_ID_ACTION,
+            bk_context_json: JSON.stringify(BK_CONTEXT),
+            query_hashes: [],
+            document_ids: [],
+            capabilities: PINNED_IG_CAPABILITIES,
+          },
+        },
+        session_state: {
+          avatar: "",
+          contact_type: this.config.method === "email" ? "email" : "phone",
+          fbid: this.igUserId || String(dsUid),
+          routing: {
+            ig_u_rur: this.rur,
+            ig_u_region: this.region,
+            ig_u_ds_user_id: String(dsUid),
+            www_claim: this.claim,
+          },
+          transport_profile: {
+            connection_type: this.connection.type,
+            bandwidth_type: this.connection.ig_connection_type,
+            bandwidth_estimate: this.connection.ig_bandwidth_speed_kbps,
+          },
+          two_factor: {
+            enabled: false,
+            totp_seed: "",
+          },
+        },
+        auth: {
+          authorization_bearer: this.bearer,
+          sessionid: this.sessionid,
+          csrftoken: this.csrf,
+        },
+        password_encryption: {
+          key_id: this.passwordKey?.keyId ?? 0,
+          public_key_b64: this.passwordKey?.publicKeyRaw || "",
+        },
+        totp: {
+          seed: "",
+          otpauth_uri: "",
+          enabled: false,
+        },
+      },
     }
 
     return {

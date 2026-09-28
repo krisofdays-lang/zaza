@@ -60,6 +60,7 @@ export interface DeviceProfile {
   scale: string
   wLogical: number
   hLogical: number
+  ramBytes: number
 }
 
 /** Pick a random compatible device + iOS pairing. */
@@ -83,6 +84,7 @@ function pickIosForDevice(device: IphoneDevice): DeviceProfile {
     scale: device.scale,
     wLogical: device.wLogical,
     hLogical: device.hLogical,
+    ramBytes: device.ramBytes,
   }
 }
 
@@ -438,6 +440,8 @@ export interface AuthCapture {
   dsUserId?: string
   csrf?: string
   rur?: string
+  sessionid?: string
+  region?: string
 }
 
 export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
@@ -500,7 +504,7 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
     }
   }
 
-  // CSRF and RUR from set-cookie
+  // CSRF, RUR, sessionid from set-cookie
   const cookies = h["set-cookie"]
   if (cookies) {
     const cookieStr = Array.isArray(cookies) ? cookies.join("; ") : String(cookies)
@@ -508,6 +512,8 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
     if (csrfMatch) result.csrf = csrfMatch[1]
     const rurMatch = /rur=([^;]+)/.exec(cookieStr)
     if (rurMatch) result.rur = rurMatch[1]
+    const sessionidMatch = /sessionid=([^;]+)/.exec(cookieStr)
+    if (sessionidMatch) result.sessionid = sessionidMatch[1]
     if (!result.dsUserId) {
       const dsMatch = /ds_user_id=(\d+)/.exec(cookieStr)
       if (dsMatch) result.dsUserId = dsMatch[1]
@@ -517,6 +523,10 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
   // RUR from header
   const rur = h["ig-set-ig-u-rur"]
   if (rur && !result.rur) result.rur = String(rur)
+
+  // Region from header
+  const region = h["ig-set-ig-u-region"]
+  if (region) result.region = String(region)
 
   return result
 }

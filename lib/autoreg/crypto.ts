@@ -15,7 +15,8 @@ import { publicEncrypt, randomBytes, createCipheriv, constants } from "node:cryp
 
 export interface PasswordKey {
   keyId: number
-  publicKey: string  // PEM-formatted RSA public key
+  publicKey: string      // PEM-formatted RSA public key (for encryption)
+  publicKeyRaw: string   // original base64 from ig-set-password-encryption-pub-key
 }
 
 export function encryptPassword(password: string, key: PasswordKey, timestamp?: number): string {
@@ -71,7 +72,7 @@ export function parsePasswordKeyFromHeaders(
   const keyId = kid ? Number(kid) : DEFAULT_KEY_ID
 
   if (!pub) {
-    return { keyId: DEFAULT_KEY_ID, publicKey: "" }
+    return { keyId: DEFAULT_KEY_ID, publicKey: "", publicKeyRaw: "" }
   }
 
   const pemBytes = Buffer.from(pub, "base64").toString("utf8")
@@ -79,5 +80,5 @@ export function parsePasswordKeyFromHeaders(
     ? pemBytes
     : `-----BEGIN PUBLIC KEY-----\n${pub.match(/.{1,64}/g)!.join("\n")}\n-----END PUBLIC KEY-----`
 
-  return { keyId, publicKey }
+  return { keyId, publicKey, publicKeyRaw: pub }
 }
