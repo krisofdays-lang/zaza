@@ -58,25 +58,26 @@ export function encryptPassword(password: string, key: PasswordKey, timestamp?: 
   return `#PWD_INSTAGRAM:4:${ts}:${blob.toString("base64")}`
 }
 
-// Parse the RSA public key from Instagram's mobileconfig response.
-// The key comes as a hex-encoded DER blob; we convert to PEM.
-export function parsePasswordKeyFromConfig(
-  data: Record<string, unknown>,
-): PasswordKey | null {
-  try {
-    // Instagram returns the key in: data.data.public_key and data.data.key_id
-    // Or under password_encryption.public_key / password_encryption.key_id
-    const pe = (data as any)?.password_encryption ?? data
-    const hexKey = pe?.public_key as string
-    const keyId = Number(pe?.key_id ?? 0)
-    if (!hexKey) return null
+import type { AxiosResponse } from "axios"
 
-    const derBuf = Buffer.from(hexKey, "hex")
-    const b64 = derBuf.toString("base64")
-    const pem = `-----BEGIN PUBLIC KEY-----\n${b64.match(/.{1,64}/g)!.join("\n")}\n-----END PUBLIC KEY-----`
+const DEFAULT_KEY_ID = 58
 
-    return { keyId, publicKey: pem }
-  } catch {
-    return null
+export function parsePasswordKeyFromHeaders(
+  resp: AxiosResponse,
+): PasswordKey {
+  const kid = resp.headers?.["ig-set-password-encryption-key-id"] || ""
+  const pub = resp.headers?.["ig-set-password-encryption-pub-key"] || ""
+
+  const keyId = kid ? Number(kid) : DEFAULT_KEY_ID
+
+  if (!pub) {
+    return { keyId: DEFAULT_KEY_ID, publicKey: "" }
   }
+
+  const pemBytes = Buffer.from(pub, "base64").toString("utf8")
+  const publicKey = pemBytes.includes("-----BEGIN")
+    ? pemBytes
+    : `-----BEGIN PUBLIC KEY-----\n${pub.match(/.{1,64}/g)!.join("\n")}\n-----END PUBLIC KEY-----`
+
+  return { keyId, publicKey }
 }

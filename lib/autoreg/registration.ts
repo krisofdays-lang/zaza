@@ -30,7 +30,7 @@ import {
   type HeadersContext,
   type AuthCapture,
 } from "./transport"
-import { encryptPassword, parsePasswordKeyFromConfig, type PasswordKey } from "./crypto"
+import { encryptPassword, parsePasswordKeyFromHeaders, type PasswordKey } from "./crypto"
 import {
   randomName,
   randomBirthday,
@@ -366,23 +366,39 @@ export class InstagramRegistration {
     this.updateState(resp)
   }
 
-  /** Fetch RSA password encryption key */
+  /** Fetch RSA password encryption key (POST with signed_body, key from headers) */
   private async fetchPasswordKey(): Promise<void> {
     this.onStep("fetch_key", "Fetching password encryption key")
-    const resp = await this.client.get(
-      `${BASE_URL}/api/v1/launcher/mobileconfig/?bool_opt_policy=`,
-      { headers: this.headers() },
+    const ts = String(Math.floor(Date.now() / 1000))
+    const paramsObj = {
+      device_id: this.guid,
+      ts,
+      client_context: '["opt,value_hash"]',
+      bool_opt_policy: "0",
+      unit_type: "1",
+      fetch_type: "ASYNC_FULL",
+      query_hash: "8ace8ac76cd0763f17ad9f3672ded0e5d9709b4db7237ea5a7bfc8c20a7f45bb",
+      api_version: "3",
+      use_case: "STANDARD",
+      fetch_mode: "CONFIG_SYNC_ONLY",
+    }
+    const body = signedBody(paramsObj)
+    const hdrs = {
+      ...this.headers(),
+      "x-fb-friendly-name": "api",
+      "x-bloks-is-panorama-enabled": "true",
+      "x-bloks-is-prism-enabled": "false",
+      "x-bloks-prism-font-enabled": "false",
+      "x-bloks-prism-colors-enabled": "false",
+      "x-ig-connection-speed": "-1kbps",
+      "x-ig-abr-connection-speed-kbps": "0",
+    }
+    const resp = await this.client.post(
+      `${BASE_URL}/api/v1/launcher/mobileconfig/`,
+      body,
+      { headers: hdrs },
     )
-    let data: Record<string, unknown>
-    try {
-      data = typeof resp.data === "string" ? JSON.parse(resp.data) : resp.data
-    } catch {
-      throw new Error(`Failed to parse mobileconfig response (HTTP ${resp.status})`)
-    }
-    this.passwordKey = parsePasswordKeyFromConfig(data)
-    if (!this.passwordKey) {
-      throw new Error("Failed to fetch password encryption key")
-    }
+    this.passwordKey = parsePasswordKeyFromHeaders(resp)
     this.updateState(resp)
   }
 
@@ -541,7 +557,7 @@ export class InstagramRegistration {
     this.onStep("step6_password", "Setting password")
 
     // Encrypt the password
-    if (!this.passwordKey) throw new Error("No password key available")
+    if (!this.passwordKey?.publicKey) throw new Error("No password key available")
     this.encryptedPassword = encryptPassword(this.password, this.passwordKey)
 
     const resp = await postGraphqlBloks(

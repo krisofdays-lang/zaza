@@ -54,10 +54,9 @@ export function AccountsTable({
   // is being refreshed (refreshingIds is non-empty). Merges fresh status, avatar
   // and username into the initial props so updates appear without a page refresh.
   const [statusOverrides, setStatusOverrides] = useState<Map<number, AccountStatus>>(new Map())
-  // Maps account ID → timestamp when we started watching it. Polling runs
-  // while this map is non-empty and auto-clears an ID once its lastCheckedAt
-  // moves past the recorded timestamp (meaning the after() callback finished).
-  const [refreshingIds, setRefreshingIds] = useState<Map<number, number>>(new Map())
+  // Maps account ID → { snapshot of lastCheckedAt at click, start time for timeout }.
+  // Polling auto-clears an ID once lastCheckedAt differs from the snapshot.
+  const [refreshingIds, setRefreshingIds] = useState<Map<number, { snapshot: string | null; start: number }>>(new Map())
   const hiddenRef = useRef(false)
   // Map account id → toast id so we can dismiss loading toasts on settlement.
   const loadingToastsRef = useRef<Map<number, string | number>>(new Map())
@@ -76,7 +75,7 @@ export function AccountsTable({
       const now = Date.now()
       setRefreshingIds((s) => {
         const next = new Map(s)
-        newIds.forEach((id) => next.set(id, now))
+        newIds.forEach((id) => next.set(id, { snapshot: null, start: now }))
         return next
       })
     }
@@ -98,26 +97,24 @@ export function AccountsTable({
         const map = new Map<number, AccountStatus>()
         for (const s of fresh) map.set(s.id, s)
         setStatusOverrides(map)
-        // Determine which IDs have settled (lastCheckedAt moved past start
-        // timestamp) or timed out, clear them, and show a notification.
+        // Determine which IDs have settled (lastCheckedAt changed from the
+        // snapshot we took at click time) or timed out, and clear them.
         const now = Date.now()
         const settled: { id: number; status: AccountStatus | undefined }[] = []
         setRefreshingIds((prev) => {
           const next = new Map(prev)
-          for (const [id, startedAt] of prev) {
-            // Safety timeout — stop polling after 60 s.
-            if (now - startedAt > 60_000) {
+          for (const [id, entry] of prev) {
+            if (now - entry.start > 60_000) {
               next.delete(id)
               settled.push({ id, status: map.get(id) })
               continue
             }
             const s = map.get(id)
-            if (s && s.lastCheckedAt) {
-              const checkedMs = new Date(s.lastCheckedAt).getTime()
-              if (checkedMs > startedAt) {
-                next.delete(id)
-                settled.push({ id, status: s })
-              }
+            if (!s) continue
+            const current = s.lastCheckedAt ? String(s.lastCheckedAt) : null
+            if (current !== null && current !== entry.snapshot) {
+              next.delete(id)
+              settled.push({ id, status: s })
             }
           }
           return next
@@ -134,19 +131,20 @@ export function AccountsTable({
             }
             loadingToastsRef.current.delete(s.id)
           }
-          const ok = settled.filter((s) => s.status?.status === "ok" || s.status?.status === "active")
-          const failed = settled.filter((s) => s.status && s.status.status !== "ok" && s.status.status !== "active")
-          if (ok.length === 1) {
-            const name = ok[0].status?.username ?? `#${ok[0].id}`
-            toast.success(`Profile updated: @${name}`)
-          } else if (ok.length > 1) {
-            toast.success(`${ok.length} profiles updated`)
-          }
-          for (const f of failed) {
-            const name = f.status?.username ?? `#${f.id}`
-            toast.error(`Refresh failed: @${name}`, {
-              description: f.status?.lastError ?? f.status?.status ?? "unknown error",
-            })
+          for (const s of settled) {
+            const name = s.status?.username ?? `#${s.id}`
+            const st = s.status?.status
+            if (st === "ok" || st === "active" || st === "idle") {
+              toast.success(`Account updated: @${name}`)
+            } else if (st === "checkpoint" || st === "challenge") {
+              toast.error(`Account got UFAC: @${name}`, {
+                description: s.status?.lastError ?? "Challenge required",
+              })
+            } else {
+              toast.error(`Refresh failed: @${name}`, {
+                description: s.status?.lastError ?? st ?? "unknown error",
+              })
+            }
           }
         }
       } catch {
@@ -279,14 +277,11 @@ export function AccountsTable({
   // page render gets fresh data.
 
   function handleRefresh(id: number) {
-    const startedAt = Date.now()
-    setRefreshingIds((s) => new Map(s).set(id, startedAt))
     const acct = visibleAccounts.find((a) => a.id === id)
+    const snapshot = acct?.lastCheckedAt ? String(acct.lastCheckedAt) : null
+    setRefreshingIds((s) => new Map(s).set(id, { snapshot, start: Date.now() }))
     const toastId = toast.loading(`Refreshing @${acct?.username ?? id}…`)
     loadingToastsRef.current.set(id, toastId)
-    // Fire-and-forget — the server action returns almost instantly (heavy
-    // work runs in after()). The polling effect auto-clears refreshingIds
-    // once the account's lastCheckedAt moves past `startedAt`.
     refreshAccountProfile(id)
   }
 
@@ -301,15 +296,18 @@ export function AccountsTable({
 
   function bulkRefresh() {
     const ids = [...selected]
-    const startedAt = Date.now() + 2000
+    const now = Date.now()
     setRefreshingIds((s) => {
       const next = new Map(s)
-      ids.forEach((id) => next.set(id, startedAt))
+      ids.forEach((id) => {
+        const acct = visibleAccounts.find((a) => a.id === id)
+        const snapshot = acct?.lastCheckedAt ? String(acct.lastCheckedAt) : null
+        next.set(id, { snapshot, start: now })
+      })
       return next
     })
     const toastId = toast.loading(`Refreshing ${ids.length} account(s)…`)
     ids.forEach((id) => loadingToastsRef.current.set(id, toastId))
-    // Fire-and-forget — polling auto-clears each ID once settled.
     bulkRefreshAccounts(ids)
   }
 
