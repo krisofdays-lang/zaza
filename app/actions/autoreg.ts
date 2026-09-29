@@ -17,6 +17,7 @@ import { revalidatePath } from "next/cache"
 import { startAutoregJob, cancelAutoregJob, type AutoregJobConfig } from "@/lib/autoreg/runner"
 import { randomDevice } from "@/lib/instagram/devices"
 import { buildUserAgent, PINNED_IG_APP_VERSION } from "@/lib/instagram/devices"
+import { randomBytes } from "node:crypto"
 
 // ── Guard ────────────────────────────────────────────────────────────────
 async function requireAdmin() {
@@ -172,6 +173,8 @@ export async function transferAutoregAccount(
         timezone: arAcct.timezone,
         userAgent: arAcct.userAgent,
         status: "idle",
+        clockOffsetMs: Math.floor(Math.random() * 240_000) - 120_000,
+        prngSeed: randomBytes(32).toString("hex"),
       })
       .returning({ id: igAccounts.id })
 
