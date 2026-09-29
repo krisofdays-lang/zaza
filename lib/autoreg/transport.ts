@@ -44,21 +44,10 @@ function warnMissingTlsProxyOnce() {
 }
 
 export function buildProxyAgent(proxyUrl: string) {
-  if (TLS_PROXY_URL) {
-    return new LoopbackTlsProxyAgent(TLS_PROXY_URL, {
-      rejectUnauthorized: false,
-      headers: {
-        "x-upstream-proxy": proxyUrl || "",
-        "x-app-version": PINNED_IG_VERSION,
-      },
-    })
-  }
-  warnMissingTlsProxyOnce()
-  if (process.env.TLS_PROXY_REQUIRED === "1") {
-    throw new Error(
-      "TLS_PROXY_REQUIRED=1 but TLS_PROXY_URL is not set: refusing to send autoreg traffic with Node's JA3/JA4 fingerprint.",
-    )
-  }
+  // Autoreg bypasses uTLS sidecar — Python reference uses plain requests
+  // with user proxy directly and gets 10/20 success. The sidecar may be
+  // stripping response headers (ig-set-authorization) or breaking the
+  // proxy chain. Use user proxy directly, same as Python.
   if (!proxyUrl) return undefined
   if (proxyUrl.startsWith("socks")) return new SocksProxyAgent(proxyUrl)
   const url = proxyUrl.startsWith("http") ? proxyUrl : `http://${proxyUrl}`
