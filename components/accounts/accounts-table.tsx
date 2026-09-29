@@ -57,7 +57,9 @@ export function AccountsTable({
   // Maps account ID → { snapshot of lastCheckedAt (ms) and status at click,
   // start time for timeout }. Polling auto-clears an ID once lastCheckedAt
   // differs from the snapshot OR the status field changes.
-  const [refreshingIds, setRefreshingIds] = useState<Map<number, { snapshotMs: number | null; snapshotStatus: string | null; start: number }>>(new Map())
+  type RefreshEntry = { snapshotMs: number | null; snapshotStatus: string | null; start: number }
+  const [refreshingIds, setRefreshingIds] = useState<Map<number, RefreshEntry>>(new Map())
+  const refreshingIdsRef = useRef<Map<number, RefreshEntry>>(new Map())
   const hiddenRef = useRef(false)
   // Map account id → toast id so we can dismiss loading toasts on settlement.
   const loadingToastsRef = useRef<Map<number, string | number>>(new Map())
@@ -74,11 +76,10 @@ export function AccountsTable({
     prevAccountIdsRef.current = new Set(accounts.map((a) => a.id))
     if (newIds.length > 0) {
       const now = Date.now()
-      setRefreshingIds((s) => {
-        const next = new Map(s)
-        newIds.forEach((id) => next.set(id, { snapshotMs: null, snapshotStatus: null, start: now }))
-        return next
-      })
+      const next = new Map(refreshingIdsRef.current)
+      newIds.forEach((id) => next.set(id, { snapshotMs: null, snapshotStatus: null, start: now }))
+      refreshingIdsRef.current = next
+      setRefreshingIds(next)
     }
   }, [accounts])
 
@@ -106,41 +107,40 @@ export function AccountsTable({
         if (cancelled) return
         statusMap = new Map<number, AccountStatus>()
         for (const s of fresh) statusMap.set(s.id, s)
-        setStatusOverrides(statusMap)
-        // Determine which IDs have settled: lastCheckedAt changed from the
-        // snapshot (ms precision), OR the status field changed, OR timed out.
-        setRefreshingIds((prev) => {
-          const next = new Map(prev)
-          for (const [id, entry] of prev) {
-            if (now - entry.start > 15_000) {
-              next.delete(id)
-              settled.push({ id, status: statusMap!.get(id) })
-              continue
-            }
-            const s = statusMap!.get(id)
-            if (!s) continue
-            const currentMs = toMs(s.lastCheckedAt)
-            const statusChanged = s.status != null && s.status !== entry.snapshotStatus
-            if ((currentMs !== null && currentMs !== entry.snapshotMs) || statusChanged) {
-              next.delete(id)
-              settled.push({ id, status: s })
-            }
+        // Compute settlement from ref (synchronous — immune to React batching).
+        const prev = refreshingIdsRef.current
+        const next = new Map(prev)
+        for (const [id, entry] of prev) {
+          if (now - entry.start > 15_000) {
+            next.delete(id)
+            settled.push({ id, status: statusMap.get(id) })
+            continue
           }
-          return next
-        })
+          const s = statusMap.get(id)
+          if (!s) continue
+          const currentMs = toMs(s.lastCheckedAt)
+          const statusChanged = s.status != null && s.status !== entry.snapshotStatus
+          if ((currentMs !== null && currentMs !== entry.snapshotMs) || statusChanged) {
+            next.delete(id)
+            settled.push({ id, status: s })
+          }
+        }
+        refreshingIdsRef.current = next
+        setRefreshingIds(next)
+        setStatusOverrides(statusMap)
       } catch {
         // getAccountStatuses failed — still enforce the timeout so toasts
         // don't hang forever when the server is unreachable.
-        setRefreshingIds((prev) => {
-          const next = new Map(prev)
-          for (const [id, entry] of prev) {
-            if (now - entry.start > 15_000) {
-              next.delete(id)
-              settled.push({ id, status: undefined })
-            }
+        const prev = refreshingIdsRef.current
+        const next = new Map(prev)
+        for (const [id, entry] of prev) {
+          if (now - entry.start > 15_000) {
+            next.delete(id)
+            settled.push({ id, status: undefined })
           }
-          return next
-        })
+        }
+        refreshingIdsRef.current = next
+        setRefreshingIds(next)
       }
       // Dismiss loading toasts and show completion toasts.
       if (settled.length > 0) {
@@ -299,7 +299,10 @@ export function AccountsTable({
     const acct = visibleAccounts.find((a) => a.id === id)
     const snapshotMs = acct?.lastCheckedAt ? new Date(acct.lastCheckedAt as string | number | Date).getTime() : null
     const snapshotStatus = acct?.status ?? null
-    setRefreshingIds((s) => new Map(s).set(id, { snapshotMs, snapshotStatus, start: Date.now() }))
+    const entry: RefreshEntry = { snapshotMs, snapshotStatus, start: Date.now() }
+    const next = new Map(refreshingIdsRef.current).set(id, entry)
+    refreshingIdsRef.current = next
+    setRefreshingIds(next)
     const toastId = toast.loading(`Refreshing @${acct?.username ?? id}…`)
     loadingToastsRef.current.set(id, toastId)
     refreshAccountProfile(id)
@@ -317,16 +320,15 @@ export function AccountsTable({
   function bulkRefresh() {
     const ids = [...selected]
     const now = Date.now()
-    setRefreshingIds((s) => {
-      const next = new Map(s)
-      ids.forEach((id) => {
-        const acct = visibleAccounts.find((a) => a.id === id)
-        const snapshotMs = acct?.lastCheckedAt ? new Date(acct.lastCheckedAt as string | number | Date).getTime() : null
-        const snapshotStatus = acct?.status ?? null
-        next.set(id, { snapshotMs, snapshotStatus, start: now })
-      })
-      return next
+    const next = new Map(refreshingIdsRef.current)
+    ids.forEach((id) => {
+      const acct = visibleAccounts.find((a) => a.id === id)
+      const snapshotMs = acct?.lastCheckedAt ? new Date(acct.lastCheckedAt as string | number | Date).getTime() : null
+      const snapshotStatus = acct?.status ?? null
+      next.set(id, { snapshotMs, snapshotStatus, start: now })
     })
+    refreshingIdsRef.current = next
+    setRefreshingIds(next)
     const toastId = toast.loading(`Refreshing ${ids.length} account(s)…`)
     ids.forEach((id) => loadingToastsRef.current.set(id, toastId))
     bulkRefreshAccounts(ids)
