@@ -244,90 +244,39 @@ export interface HeadersContext {
 }
 
 export function commonHeaders(ctx: HeadersContext): Record<string, string> {
-  const [lang, region] = ctx.geo.locale.split("_")
-  const dashLocale = region ? `${lang}-${region}` : lang
-
-  // Per-request bandwidth jitter matching the main client's bandwidthHeaders().
-  // Base range: 450–1350 kbps (from real iOS captures), not the connection's raw
-  // speed. The base is derived from the ConnectionProfile so it stays stable per
-  // registration but jitters ±15% per request.
-  const baseKbps = 450 + (parseInt(ctx.deviceId.replace(/\D/g, "").slice(0, 4) || "0", 10) % 900)
-  const rttBase = 2 + (parseInt(ctx.deviceId.replace(/\D/g, "").slice(4, 5) || "0", 10) % 6)
-  const jitter = (base: number, pct: number) => base * (1 + (Math.random() * 2 - 1) * pct)
-  const kbps = jitter(baseKbps, 0.15)
-  const sensitive = kbps * (0.95 + Math.random() * 0.05)
-  const rtt = Math.max(1, Math.round(jitter(rttBase, 0.4)))
-  const connSpeed = Math.max(10, Math.round(kbps * (0.2 + Math.random() * 0.5)))
-  const cmKbps = Math.max(20, jitter(baseKbps * 0.3, 0.5))
-  const cmLatency = Math.max(1, jitter(rttBase * 0.6, 0.5))
-  const abrKbps = Math.max(20, Math.round(jitter(baseKbps * 0.25, 0.4)))
-  const c = 60 + Math.floor(Math.random() * 140)
-  const tbw = 30000 + Math.floor(Math.random() * 90000)
-  const uplat = 30 + Math.floor(Math.random() * 300)
+  const connSpeed = 1000 + Math.floor(Math.random() * 4000)
 
   const headers: Record<string, string> = {
-    "user-agent": ctx.userAgent,
+    "accept-language": "en-US;q=1.0",
     "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-    "accept-language": ctx.geo.acceptLanguage,
-    "accept-encoding": "gzip, deflate",
-    "ig-intended-user-id": ctx.dsUserId || "0",
+    "ig-intended-user-id": "0",
     "priority": "u=2, i",
+    "user-agent": ctx.userAgent,
     "x-bloks-version-id": PINNED_BLOKS_VERSION_ID,
     "x-fb-client-ip": "True",
-    "x-fb-connection-type": ctx.connection.type === "WiFi" ? "wifi" : "cell",
+    "x-fb-connection-type": "wifi",
     "x-fb-server-cluster": "True",
-    "x-fb-http-engine": "Tigon/MNS/TCP",
-    "x-fb-rmd": "state=URL_ELIGIBLE",
-    "x-fb-connection-quality": `EXCELLENT; q=0.9, rtt=${rtt}, rtx=0, c=${c}, mss=1380, tbw=${tbw}, tp=-1, tpl=-1, uplat=${uplat}, ullat=0`,
-    "x-fb": "0",
-    "x-messenger": "0",
-    "x-whatsapp": "0",
-    "x-ads-opt-out": "0",
     "x-ig-app-id": PINNED_IG_APP_ID,
-    "x-ig-app-locale": ctx.geo.language,
-    "x-ig-app-startup-country": (region || "US").toUpperCase(),
-    "x-ig-bandwidth-speed-kbps": kbps.toFixed(3),
-    "x-ig-bandwidth-speed-kbps-sensitive": sensitive.toFixed(3),
-    "x-ig-abr-connection-speed-kbps": String(abrKbps),
+    "x-ig-app-locale": "en",
+    "x-ig-bandwidth-speed-kbps": "0.000",
     "x-ig-bloks-serialize-payload": "true",
     "x-ig-capabilities": PINNED_IG_CAPABILITIES,
     "x-ig-connection-speed": `${connSpeed}kbps`,
-    "x-ig-connection-type": ctx.connection.ig_connection_type,
+    "x-ig-connection-type": "WiFi",
     "x-ig-device-id": ctx.deviceId,
-    "x-device-id": ctx.deviceId,
-    "x-ig-device-locale": ctx.geo.locale,
-    "x-ig-device-languages": JSON.stringify({
-      keyboard_languages: `${ctx.geo.locale},emoji`,
-      system_languages: ctx.geo.locale,
-      keyboard_language: ctx.geo.locale,
-    }),
+    "x-ig-device-locale": "en_US",
+    "x-ig-mapped-locale": "en_US",
+    "x-ig-timezone-offset": "-18000",
+    "x-tigon-is-retry": "False",
     "x-ig-transfer-encoding": "chunked",
+    "x-fb-http-engine": "Tigon/MNS/TCP",
+    "x-fb-rmd": "state=URL_ELIGIBLE",
     "bloks_versioning_id": PINNED_BLOKS_VERSION_ID,
     "bk_client_context": JSON.stringify(BK_CONTEXT),
-    "x-ig-family-device-id": ctx.familyDeviceId,
-    "x-ig-mapped-locale": ctx.geo.locale,
-    "x-ig-salt-ids": "42139649",
-    "x-ig-timezone-offset": String(tzOffsetSeconds(ctx.geo.timezone)),
-    "x-cm-bandwidth-kbps": cmKbps.toFixed(3),
-    "x-cm-latency": cmLatency.toFixed(3),
-    "x-pigeon-session-id": ctx.pigeonSession,
-    "x-pigeon-rawclienttime": String(Date.now() / 1000),
-    "x-tigon-is-retry": "False",
-    ...BLOKS_PRISM_HEADERS,
   }
 
-  if (ctx.connUuid) headers["x-fb-conn-uuid-client"] = ctx.connUuid
   if (ctx.mid) headers["x-mid"] = ctx.mid
-  if (ctx.cloudTrustToken) headers["x-cloud-trust-token"] = ctx.cloudTrustToken
-  if (ctx.bearer) headers["authorization"] = ctx.bearer
-  if (ctx.dsUserId) headers["ig-u-ds-user-id"] = ctx.dsUserId
-  headers["x-ig-www-claim"] = ctx.claim || "0"
-  if (ctx.csrf) headers["x-csrftoken"] = ctx.csrf
-  if (ctx.rur) headers["ig-u-rur"] = ctx.rur
 
-  // Cookie header — real iOS clients always send cookies back after receiving
-  // set-cookie. Without this, the absence of cookies alongside full device
-  // headers is a strong automation signal.
   if (ctx.cookies && ctx.cookies.size > 0) {
     headers["cookie"] = [...ctx.cookies].map(([k, v]) => `${k}=${v}`).join("; ")
   }
@@ -383,7 +332,7 @@ export async function postGraphqlBloks(
     pretty: "false",
     format: "json",
     server_timestamps: "true",
-    locale: headers["x-ig-mapped-locale"] || "en_US",
+    locale: "en_US",
     purpose: "fetch",
     fb_api_req_friendly_name: friendlyName,
     client_doc_id: resolvedDocId,
@@ -664,7 +613,7 @@ export function createClient(proxyUrl?: string): AxiosInstance {
   const agent = buildProxyAgent(proxyUrl || "")
   return axios.create({
     timeout: 60_000,
-    maxRedirects: 0,
+    maxRedirects: 30,
     validateStatus: () => true, // don't throw on non-2xx
     ...(agent ? { httpsAgent: agent, httpAgent: agent } : {}),
   })

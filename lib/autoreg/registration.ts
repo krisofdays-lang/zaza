@@ -120,6 +120,7 @@ export class InstagramRegistration {
   private aacJid: string
   private aacCs: string
   private qplInstanceId: number
+  private registrationFlowId: string
   private aacInitTs: number
 
   // Registration state
@@ -185,7 +186,8 @@ export class InstagramRegistration {
     this.cloudTrustToken = genCloudTrustToken()
     this.aacJid = genAacJid()
     this.aacCs = genAacCs()
-    this.qplInstanceId = Math.floor(Math.random() * 1e18)
+    this.qplInstanceId = Math.floor(Date.now()) * 1000
+    this.registrationFlowId = crypto.randomUUID()
     this.aacInitTs = Math.floor(Date.now() / 1000) - 30
     this.connUuid = Array.from({ length: 32 }, () =>
       Math.floor(Math.random() * 16).toString(16),
@@ -260,6 +262,10 @@ export class InstagramRegistration {
     }
     if (this.rur) h["ig-u-rur"] = this.rur
     h["x-ig-www-claim"] = this.claim || "SKIP"
+    h["x-ig-timezone-offset"] = String(tzOffsetSeconds(this.geo.timezone))
+    h["priority"] = "u=2, i"
+    h["x-ig-bloks-serialize-payload"] = "true"
+    h["content-type"] = "application/x-www-form-urlencoded; charset=UTF-8"
     if (opts?.clientEndpoint) h["x-ig-client-endpoint"] = opts.clientEndpoint
     if (opts?.navChain) h["x-ig-nav-chain"] = opts.navChain
     return h
@@ -284,7 +290,7 @@ export class InstagramRegistration {
       family_device_id: null,
       layered_homepage_experiment_group: "igios_layered_landing_screen_experiment_ld_with_xmds_v2",
       INTERNAL__latency_qpl_instance_id: this.qplInstanceId,
-      INTERNAL__latency_qpl_marker_id: "36707587_null",
+      INTERNAL__latency_qpl_marker_id: 36707139,
       cloud_trust_token: this.cloudTrustToken,
       login_surface: "login_home",
       login_entry_point: "logged_out",
@@ -446,7 +452,7 @@ export class InstagramRegistration {
       source_account_reg_info: null,
       soap_creation_source: null,
       source_account_type_to_reg_info: null,
-      registration_flow_id: crypto.randomUUID(),
+      registration_flow_id: this.registrationFlowId,
       should_skip_youth_tos: false,
       is_youth_regulation_flow_complete: false,
       is_on_cold_start: false,
@@ -729,10 +735,14 @@ export class InstagramRegistration {
         flow_info: this.flowInfo(),
         reg_info: this.regInfo({ contactpoint: this.email }),
         current_step: 0,
+        INTERNAL_INFRA_screen_id: crypto.randomUUID(),
+        root_screen_id: "CAA_REG_CONTACT_POINT_EMAIL",
         cp_funnel: 0,
         cp_source: 0,
         prefetch_on_field: 1,
         is_from_logged_out: 1,
+        offline_experiment_group: "caa_iteration_v3_perf_ig_4",
+        layered_homepage_experiment_group: "igios_layered_landing_screen_experiment_ld_with_xmds_v2",
       }),
     )
     this.updateState(resp)
@@ -982,9 +992,6 @@ export class InstagramRegistration {
       confirmationCode: this.verificationCode,
       birthday: this.birthday,
       encryptedPassword: this.encryptedPassword,
-      username: this.username,
-      firstName: this.firstName,
-      shouldSavePassword: true,
     }))
     base.age_range = this.ageRange()
     base.should_skip_youth_tos = true
@@ -1343,7 +1350,8 @@ export class InstagramRegistration {
 
     // Extract experience_id from PROMPT response; fall back to one captured
     // earlier (from profile skip or transition responses).
-    const expMatch = /"experience_id"\s*:\s*"([^"]+)"/.exec(raw1)
+    const expMatch = /experience_id[\\":\s]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(raw1)
+      || /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(raw1)
     if (expMatch) this.experienceId = expMatch[1]
 
     if (!this.experienceId) {
@@ -1364,7 +1372,7 @@ export class InstagramRegistration {
       {},
       {
         flow_name: "new_users_meta_flow",
-        INTERNAL__latency_qpl_marker_id: "36707587_null",
+        INTERNAL__latency_qpl_marker_id: 36707139,
         INTERNAL__latency_qpl_instance_id: this.qplInstanceId,
         _w_s228763: "",
         source: "source",
@@ -1386,37 +1394,81 @@ export class InstagramRegistration {
   // ── Post-registration warmup ───────────────────────────────────────────
   // Simulates the initial feed load a real app does after signup.
 
+  private warmupHeaders(navChain: string, jsonCt = false): Record<string, string> {
+    const h = this.headers()
+    if (this.bearer) h["authorization"] = this.bearer
+    if (this.dsUserId) {
+      h["ig-intended-user-id"] = this.dsUserId
+      h["ig-u-ds-user-id"] = this.dsUserId
+    }
+    if (this.rur) h["ig-u-rur"] = this.rur
+    h["x-ig-www-claim"] = this.claim || "0"
+    h["x-ig-nav-chain"] = navChain
+    h["content-type"] = jsonCt
+      ? "application/json; charset=utf-8"
+      : "application/x-www-form-urlencoded; charset=UTF-8"
+    return h
+  }
+
   private async warmup(): Promise<void> {
     this.onStep("warmup", "Running post-registration warmup")
-    try {
-      // Reels tray cold start
-      await this.client.get(
-        `${BASE_URL}/api/v1/feed/reels_tray/?reason=cold_start`,
-        { headers: this.headers() },
-      )
-      await sleep(2000 + Math.random() * 3000)
+    if (!this.bearer) return
 
-      // Timeline cold start fetch
-      const body = signedBody({
-        feed_view_info: "[]",
-        phone_id: this.phoneId,
-        reason: "cold_start_fetch",
-        battery_level: 70 + Math.floor(Math.random() * 30),
-        timezone_offset: String(tzOffsetSeconds(this.geo.timezone)),
-        device_id: this.guid,
-        request_id: genWaterfallId(),
-        is_pull_to_refresh: "0",
-        is_async_ads_double_request: "0",
-        is_async_ads_rti: "0",
+    const tz = String(tzOffsetSeconds(this.geo.timezone))
+    const now = Date.now() / 1000
+    const navChain =
+      `BKCdsScreenViewController:com.bloks.www.caa.login.auto_login_interstitial.nonrecursive:1:cold_start:${now.toFixed(6)}:::${now.toFixed(6)},` +
+      `IGMainFeedViewController:feed_timeline:2:cold_start:${now.toFixed(6)}:::${now.toFixed(6)}`
+    const traySessionId = crypto.randomUUID().replace(/-/g, "")
+
+    try {
+      const reelsBody = signedBody({
+        reason: "cold_start",
+        _uuid: this.guid,
+        tray_session_id: traySessionId,
+        timezone_offset: tz,
+        request_id: `${this.dsUserId}_${crypto.randomUUID().toUpperCase()}`,
       })
       await this.client.post(
-        `${BASE_URL}/api/v1/feed/timeline/`,
-        body,
-        { headers: this.headers() },
+        `${BASE_URL}/api/v1/feed/reels_tray/`,
+        reelsBody,
+        { headers: this.warmupHeaders(navChain, true) },
       )
-    } catch {
-      // Warmup is best-effort — don't fail the registration
-    }
+    } catch {}
+
+    await sleep(1500 + Math.random() * 2500)
+
+    try {
+      const sessionId = `${this.dsUserId}_${crypto.randomUUID().toUpperCase()}`
+      const requestId = `${this.dsUserId}_${crypto.randomUUID().toUpperCase()}`
+      const form = new URLSearchParams({
+        has_camera_permission: "0",
+        feed_view_info: "[]",
+        reason: "cold_start_fetch",
+        is_pull_to_refresh: "0",
+        cancel_ongoing_fetch: "0",
+        is_async_ads_double_request: "0",
+        is_async_ads_rti: "0",
+        is_async_ads_in_headload_enabled: "0",
+        has_seen_aart_on: "0",
+        battery_level: "85",
+        timezone_offset: tz,
+        device_id: this.guid,
+        family_device_id: this.familyDeviceId,
+        _uuid: this.guid,
+        request_id: requestId,
+        session_id: sessionId,
+        is_charging: "0",
+        is_dark_mode: "0",
+        will_sound_on: "0",
+        bloks_versioning_id: PINNED_BLOKS_VERSION_ID,
+      }).toString()
+      await this.client.post(
+        `${BASE_URL}/api/v1/feed/timeline/`,
+        form,
+        { headers: this.warmupHeaders(navChain) },
+      )
+    } catch {}
   }
 
   // ══════════════════════════════════════════════════════════════════════

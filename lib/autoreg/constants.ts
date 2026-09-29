@@ -89,12 +89,12 @@ export const IPHONE_DEVICES: IphoneDevice[] = [
   { model: "iPhone12,3", name: "iPhone 11 Pro", res: "1125x2436", scale: "3.00", wLogical: 375, hLogical: 812, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
   { model: "iPhone12,5", name: "iPhone 11 Pro Max", res: "1242x2688", scale: "3.00", wLogical: 414, hLogical: 896, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
   // A14 (4 GB)
-  { model: "iPhone13,1", name: "iPhone 12 mini", res: "1080x2340", scale: "3.00", wLogical: 360, hLogical: 780, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
+  { model: "iPhone13,1", name: "iPhone 12 mini", res: "1080x2340", scale: "3.00", wLogical: 375, hLogical: 812, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
   { model: "iPhone13,2", name: "iPhone 12", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
   { model: "iPhone13,3", name: "iPhone 12 Pro", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 15, iosMax: 18, ramBytes: 6442450944 },
   { model: "iPhone13,4", name: "iPhone 12 Pro Max", res: "1284x2778", scale: "3.00", wLogical: 428, hLogical: 926, iosMin: 15, iosMax: 18, ramBytes: 6442450944 },
   // A15 (4/6 GB)
-  { model: "iPhone14,4", name: "iPhone 13 mini", res: "1080x2340", scale: "3.00", wLogical: 360, hLogical: 780, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
+  { model: "iPhone14,4", name: "iPhone 13 mini", res: "1080x2340", scale: "3.00", wLogical: 375, hLogical: 812, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
   { model: "iPhone14,5", name: "iPhone 13", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 15, iosMax: 18, ramBytes: 4294967296 },
   { model: "iPhone14,2", name: "iPhone 13 Pro", res: "1170x2532", scale: "3.00", wLogical: 390, hLogical: 844, iosMin: 15, iosMax: 18, ramBytes: 6442450944 },
   { model: "iPhone14,3", name: "iPhone 13 Pro Max", res: "1284x2778", scale: "3.00", wLogical: 428, hLogical: 926, iosMin: 15, iosMax: 18, ramBytes: 6442450944 },
