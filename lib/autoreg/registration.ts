@@ -1180,6 +1180,21 @@ export class InstagramRegistration {
     )
     this.updateState(resp)
 
+    // Debug: log auth capture results from step10
+    const step10Raw = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data)
+    this.onStep("step10_debug", [
+      `HTTP ${resp.status}`,
+      `bearer=${this.bearer ? "YES" : "NO"}`,
+      `sessionid=${this.sessionid ? "YES" : "NO"}`,
+      `dsUserId=${this.dsUserId || "NO"}`,
+      `ig-set-authorization=${resp.headers?.["ig-set-authorization"] ? "YES" : "NO"}`,
+      `set-cookie=${resp.headers?.["set-cookie"] ? "YES" : "NO"}`,
+      `body_has_Bearer=${step10Raw.includes("Bearer") ? "YES" : "NO"}`,
+      `body_has_sessionid=${step10Raw.includes("sessionid") ? "YES" : "NO"}`,
+      `body_has_ds_user_id=${step10Raw.includes("ds_user_id") ? "YES" : "NO"}`,
+      `body[:200]=${step10Raw.slice(0, 200)}`,
+    ].join(" | "))
+
     // Check for restrictions
     const restriction = this.detectRestriction(resp)
     if (restriction) {
@@ -1187,7 +1202,7 @@ export class InstagramRegistration {
     }
 
     // Extract ig_user_id and family uid from response (matching reference)
-    const raw = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data)
+    const raw = step10Raw
     const unescaped = raw.replace(/\\\\/g, "\\").replace(/\\"/g, '"').replace(/\\\//g, "/")
 
     // created_user pk (reference pattern)
@@ -1264,6 +1279,7 @@ export class InstagramRegistration {
       },
     )
     this.updateState(resp)
+    this.onStep("nux_debug", `profile_skip: bearer=${this.bearer ? "YES" : "NO"} sessionid=${this.sessionid ? "YES" : "NO"} dsUserId=${this.dsUserId || "NO"}`)
 
     // Extract experience_id (can appear in profile skip response too)
     if (!this.experienceId) {

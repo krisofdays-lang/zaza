@@ -352,6 +352,8 @@ export async function postGraphqlBloks(
       "x-graphql-client-library": "pando",
       "x-graphql-request-purpose": "fetch",
     },
+    responseType: "text",
+    transformResponse: (d: string) => d,
   })
 }
 
@@ -382,6 +384,8 @@ export async function postAsyncAction(
         ...headers,
         "x-fb-friendly-name": "bloks/async_action/",
       },
+      responseType: "text",
+      transformResponse: (d: string) => d,
     },
   )
 }
