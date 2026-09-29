@@ -43,8 +43,6 @@ import { useWorkflowRun } from "@/components/workflows/use-workflow-run"
 import { orderActionNodes, type WorkflowGraph } from "@/lib/workflows/graph"
 import { playCompletionChime } from "@/lib/workflows/notify"
 import { saveWorkflowGraph } from "@/app/actions/workflows"
-import { uploadMedia } from "@/app/actions/storage"
-import { resolvePendingUploads } from "@/lib/workflows/pending-uploads"
 import { clampConcurrency } from "@/components/shared/concurrency-control"
 import type { WorkflowDetail } from "@/lib/workflows/run-types"
 import type { WfAccount, WfMedia } from "@/lib/workflows/types"
@@ -282,11 +280,9 @@ function EditorInner({
     const bad = nodes.find((n) => {
       if ((n.data as WfNodeData)?.actionKey !== "post_reel") return false
       const cfg = (n.data as WfNodeData).config as
-        | { assignments?: { mediaId: number | null; pendingKey?: string | null }[] }
+        | { assignments?: { mediaId: number | null }[] }
         | undefined
-      // A reel counts as attached if it's already in storage (mediaId) OR is a
-      // pending file that uploads on run (pendingKey, e.g. via "Upload bunch").
-      return !cfg?.assignments?.some((a) => a.mediaId || a.pendingKey)
+      return !cfg?.assignments?.some((a) => a.mediaId)
     })
     return bad?.id ?? null
   }
@@ -340,19 +336,7 @@ function EditorInner({
       toast.error("No accounts selected to run.")
       return
     }
-    // Bunch-attached media lives only in the client pending registry; upload it
-    // to storage now (once per file) and rewrite the graph with real ids before
-    // the run is persisted and started.
     const graph = currentGraph()
-    try {
-      // Wrap uploadMedia to skip per-file revalidation — one revalidation
-      // after ALL uploads is enough and avoids hammering the server.
-      const uploaded = await resolvePendingUploads(graph, (fd) => uploadMedia(fd, { skipRevalidate: true }))
-      if (uploaded > 0) toast.success(`Uploaded ${uploaded} file${uploaded === 1 ? "" : "s"} to storage`)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not upload attached media")
-      return
-    }
     setDirty(false)
     setLogsOpen(true)
     const res = await startRun({ name, graph, accountIds })

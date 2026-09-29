@@ -335,6 +335,7 @@ export function StepPanel({
         {/* Post Reel: per-account reel + caption assignments. */}
         {isPostReel && (
           <PostReelPanel
+            nodeId={node.id}
             accounts={accounts}
             media={media}
             value={reelConfig}
@@ -348,6 +349,7 @@ export function StepPanel({
         {/* Post Media: per-account multi-media (1 = post, 2+ = carousel) + caption. */}
         {isPostMedia && (
           <PostMediaPanel
+            nodeId={node.id}
             accounts={accounts}
             media={media}
             value={postMediaConfig}
@@ -361,6 +363,7 @@ export function StepPanel({
         {/* Post Story: per-account single media + optional link sticker. */}
         {isPostStory && (
           <StoryPanel
+            nodeId={node.id}
             mode="story"
             accounts={accounts}
             media={media}
@@ -377,6 +380,7 @@ export function StepPanel({
             story then promotes it to a highlight from the archive. */}
         {isCreateHighlight && (
           <StoryPanel
+            nodeId={node.id}
             mode="highlight"
             accounts={accounts}
             media={media}

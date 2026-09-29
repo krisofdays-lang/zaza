@@ -25,7 +25,7 @@ import {
   Search,
 } from "lucide-react"
 import { uploadMedia } from "@/app/actions/storage"
-import { registerPendingFile, getPendingUrl, revokePendingFile } from "@/lib/workflows/pending-uploads"
+import { startBunchUpload, isNodeUploading, getNodeUploadProgress, subscribe as subscribeBgUploads } from "@/lib/workflows/bg-uploads"
 import type { PostReelConfig, ReelAssignment, WfAccount, WfMedia } from "@/lib/workflows/types"
 import { LazyMediaThumb } from "@/components/storage/lazy-media-thumb"
 
@@ -35,11 +35,13 @@ import { LazyMediaThumb } from "@/components/storage/lazy-media-thumb"
  * Media is referenced by library id, so duplicating the node copies the file.
  */
 export function PostReelPanel({
+  nodeId,
   accounts,
   media: initialMedia,
   value,
   onChange,
 }: {
+  nodeId: string
   accounts: WfAccount[]
   media: WfMedia[]
   value: PostReelConfig
@@ -49,7 +51,11 @@ export function PostReelPanel({
   const [library, setLibrary] = useState<WfMedia[]>(initialMedia)
   const [pickerAccountId, setPickerAccountId] = useState<number | null>(null)
   const [uploadingFor, setUploadingFor] = useState<number | null>(null)
-  const [bunchUploading, setBunchUploading] = useState(false)
+
+  const [, bgTick] = useState(0)
+  useEffect(() => subscribeBgUploads(() => bgTick((n) => n + 1)), [])
+  const bunchUploading = isNodeUploading(nodeId)
+  const bunchProgress = getNodeUploadProgress(nodeId)
   // When true, the picker shows only media used by the account it was opened for.
   const [onlyThisAccount, setOnlyThisAccount] = useState(false)
   // "Add captions": collect several captions, then spread them randomly across
@@ -111,7 +117,7 @@ export function PostReelPanel({
     () =>
       accounts.filter((acc) => {
         const a = value.assignments.find((x) => x.accountId === acc.id)
-        return Boolean(a?.mediaId) || Boolean(a?.pendingKey)
+        return Boolean(a?.mediaId)
       }).length,
     [accounts, value.assignments],
   )
@@ -136,57 +142,33 @@ export function PostReelPanel({
   }
 
   function pickFromLibrary(accountId: number, m: WfMedia) {
-    const prev = assignmentFor(accountId)?.pendingKey
-    if (prev) revokePendingFile(prev)
-    setAssignment(accountId, { mediaId: m.id, mediaUrl: m.blobUrl, mediaName: m.name, pendingKey: null })
+    setAssignment(accountId, { mediaId: m.id, mediaUrl: m.blobUrl, mediaName: m.name })
     setPickerAccountId(null)
   }
 
   function clearReel(accountId: number) {
-    const prev = assignmentFor(accountId)?.pendingKey
-    if (prev) revokePendingFile(prev)
-    setAssignment(accountId, { mediaId: null, mediaUrl: null, mediaName: null, pendingKey: null })
+    setAssignment(accountId, { mediaId: null, mediaUrl: null, mediaName: null })
   }
 
-  // "Upload bunch": pick multiple videos at once; they fill accounts in order
-  // (file[i] -> account[i]). Extra files beyond the account count are ignored;
-  // if there are fewer files than accounts, only that many accounts get a reel.
-  // Each file is uploaded to storage right away (deduped server-side by content
-  // hash) so every assignment gets a real mediaId.
-  async function handleBunch(files: FileList | null) {
+  function handleBunch(files: FileList | null) {
     if (!files || files.length === 0 || accounts.length === 0) return
-    // Copy out of the live FileList before clearing the input, otherwise
-    // resetting input.value empties `files` before we read it.
     const chosen = Array.from(files).slice(0, accounts.length)
     if (bunchInputRef.current) bunchInputRef.current.value = ""
-    setBunchUploading(true)
-    try {
-      // Upload all chosen files in parallel; server dedups identical bytes.
-      const uploaded = await Promise.all(
-        chosen.map(async (file) => {
-          const fd = new FormData()
-          fd.append("file", file)
-          try {
-            const res = await uploadMedia(fd)
-            if (res.ok && res.media) return res.media
-          } catch {
-            /* handled below via null */
-          }
-          return null
-        }),
-      )
 
-      // Add freshly uploaded media to the local library for the picker.
+    const pairs = chosen.map((file, i) => ({ accountId: accounts[i].id, file }))
+    const snap = value
+
+    startBunchUpload(nodeId, pairs, (fd) => uploadMedia(fd), (results) => {
       const fresh: WfMedia[] = []
-      for (const m of uploaded) {
-        if (m && !library.some((x) => x.id === m.id)) {
-          fresh.push({ id: m.id, name: m.name, kind: m.kind, blobUrl: m.blobUrl })
+      for (const r of results) {
+        if (r.media && !library.some((x) => x.id === r.media!.id)) {
+          fresh.push({ id: r.media.id, name: r.media.name, kind: r.media.kind, blobUrl: r.media.blobUrl })
         }
       }
       if (fresh.length > 0) setLibrary((prev) => [...fresh, ...prev])
 
-      const others = value.assignments
-      const next: ReelAssignment[] = accounts.map((acc, i) => {
+      const others = snap.assignments
+      const next: ReelAssignment[] = accounts.map((acc) => {
         const existing = others.find((a) => a.accountId === acc.id)
         const base: ReelAssignment = existing ?? {
           accountId: acc.id,
@@ -195,25 +177,20 @@ export function PostReelPanel({
           mediaName: null,
           description: "",
         }
-        const m = uploaded[i]
-        if (!m) return base
-        if (base.pendingKey) revokePendingFile(base.pendingKey)
-        return { ...base, mediaId: m.id, mediaUrl: m.blobUrl, mediaName: m.name, pendingKey: null }
+        const r = results.find((x) => x.accountId === acc.id)
+        if (!r?.media) return base
+        return { ...base, mediaId: r.media.id, mediaUrl: r.media.blobUrl, mediaName: r.media.name }
       })
       onChange({ assignments: next })
 
-      const okCount = uploaded.filter(Boolean).length
-      const failed = chosen.length - okCount
+      const okCount = results.filter((r) => r.media).length
+      const failed = pairs.length - okCount
       if (okCount > 0) {
-        toast.success(
-          `Attached ${okCount} reel${okCount === 1 ? "" : "s"} to storage${failed > 0 ? ` (${failed} failed)` : ""}`,
-        )
+        toast.success(`Attached ${okCount} reel${okCount === 1 ? "" : "s"} to storage${failed > 0 ? ` (${failed} failed)` : ""}`)
       } else {
         toast.error("Upload failed")
       }
-    } finally {
-      setBunchUploading(false)
-    }
+    })
   }
 
   function openFilePicker(accountId: number) {
@@ -237,7 +214,7 @@ export function PostReelPanel({
     const attachedIds = accounts
       .filter((acc) => {
         const a = assignmentFor(acc.id)
-        return Boolean(a?.mediaId) || Boolean(a?.pendingKey)
+        return Boolean(a?.mediaId)
       })
       .map((acc) => acc.id)
     if (attachedIds.length === 0) {
@@ -310,7 +287,7 @@ export function PostReelPanel({
           >
             {bunchUploading ? (
               <>
-                <Loader2 className="size-3.5 animate-spin" /> Uploading…
+                <Loader2 className="size-3.5 animate-spin" /> Uploading{bunchProgress ? ` ${bunchProgress.done}/${bunchProgress.total}` : ""}…
               </>
             ) : (
               <>
@@ -340,8 +317,8 @@ export function PostReelPanel({
             const a = assignmentFor(acc.id)
             const uploading = uploadingFor === acc.id
             const initial = (acc.username || acc.label || "?").charAt(0).toUpperCase()
-            const previewUrl = a?.pendingKey ? getPendingUrl(a.pendingKey) : a?.mediaUrl
-            const skipped = !a?.mediaId && !a?.pendingKey
+            const previewUrl = a?.mediaUrl
+            const skipped = !a?.mediaId
             return (
               <li key={acc.id} className="rounded-lg border border-border bg-muted/30 p-3">
                 <div className="flex items-center gap-2">
@@ -369,11 +346,6 @@ export function PostReelPanel({
                           preload="metadata"
                           className="size-full object-cover"
                         />
-                        {a?.pendingKey && (
-                          <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 to-transparent px-1 py-0.5 text-center text-[9px] font-medium text-white">
-                            Uploads on run
-                          </span>
-                        )}
                         <button
                           type="button"
                           aria-label="Remove reel"

@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Upload, FolderOpen, ImageIcon, Loader2, X, Film, ArrowDownWideNarrow, Layers } from "lucide-react"
 import { uploadMedia } from "@/app/actions/storage"
-import { registerPendingFile, getPendingUrl, revokePendingFile } from "@/lib/workflows/pending-uploads"
+import { startBunchUpload, isNodeUploading, getNodeUploadProgress, subscribe as subscribeBgUploads } from "@/lib/workflows/bg-uploads"
 import {
   MAX_CAROUSEL_ITEMS,
   type MediaAssignment,
@@ -30,11 +30,13 @@ import { LazyMediaThumb } from "@/components/storage/lazy-media-thumb"
  * library id + url, so duplicating the node copies the references.
  */
 export function PostMediaPanel({
+  nodeId,
   accounts,
   media: initialMedia,
   value,
   onChange,
 }: {
+  nodeId: string
   accounts: WfAccount[]
   media: WfMedia[]
   value: PostMediaConfig
@@ -48,6 +50,11 @@ export function PostMediaPanel({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadTargetRef = useRef<number | null>(null)
   const bunchInputRef = useRef<HTMLInputElement>(null)
+
+  const [, bgTick] = useState(0)
+  useEffect(() => subscribeBgUploads(() => bgTick((n) => n + 1)), [])
+  const bunchUploading = isNodeUploading(nodeId)
+  const bunchProgress = getNodeUploadProgress(nodeId)
 
   const pickerAccount = accounts.find((a) => a.id === pickerAccountId)
   const allFiltered = useMemo(
@@ -128,39 +135,44 @@ export function PostMediaPanel({
   }
 
   function removeItem(accountId: number, item: MediaItemRef) {
-    if (item.pendingKey) revokePendingFile(item.pendingKey)
     setAssignment(accountId, {
-      items: itemsFor(accountId).filter((it) =>
-        item.pendingKey ? it.pendingKey !== item.pendingKey : it.mediaId !== item.mediaId,
-      ),
+      items: itemsFor(accountId).filter((it) => it.mediaId !== item.mediaId),
     })
   }
 
-  // "Upload bunch": pick multiple photos at once; each fills one account in order
-  // (file[i] -> account[i], replacing that account's items with the single
-  // photo). Extra files beyond the account count are ignored; fewer files than
-  // accounts leaves the remaining accounts untouched. Files are held in the
-  // pending registry and uploaded to storage on run.
   function handleBunch(files: FileList | null) {
     if (!files || files.length === 0 || accounts.length === 0) return
-    // Copy out of the live FileList before clearing the input, otherwise
-    // resetting input.value empties `files` before we read it.
     const chosen = Array.from(files).slice(0, accounts.length)
     if (bunchInputRef.current) bunchInputRef.current.value = ""
-    const others = value.assignments
-    const next: MediaAssignment[] = accounts.map((acc, i) => {
-      const existing = others.find((a) => a.accountId === acc.id)
-      const base: MediaAssignment = existing ?? { accountId: acc.id, items: [], description: "" }
-      const file = chosen[i]
-      if (!file) return base
-      base.items.forEach((it) => it.pendingKey && revokePendingFile(it.pendingKey))
-      const key = registerPendingFile(file)
-      const kind = file.type.startsWith("video") ? "video" : "image"
-      const item: MediaItemRef = { mediaId: 0, mediaUrl: "", mediaName: file.name, kind, pendingKey: key }
-      return { ...base, items: [item] }
+
+    const pairs = chosen.map((file, i) => ({ accountId: accounts[i].id, file }))
+    const snap = value
+
+    startBunchUpload(nodeId, pairs, (fd) => uploadMedia(fd), (results) => {
+      const others = snap.assignments
+      const next: MediaAssignment[] = accounts.map((acc) => {
+        const existing = others.find((a) => a.accountId === acc.id)
+        const base: MediaAssignment = existing ?? { accountId: acc.id, items: [], description: "" }
+        const r = results.find((x) => x.accountId === acc.id)
+        if (!r?.media) return base
+        const item: MediaItemRef = {
+          mediaId: r.media.id,
+          mediaUrl: r.media.blobUrl,
+          mediaName: r.media.name,
+          kind: r.media.kind,
+        }
+        return { ...base, items: [item] }
+      })
+      onChange({ assignments: next })
+
+      const okCount = results.filter((r) => r.media).length
+      const failed = pairs.length - okCount
+      if (okCount > 0) {
+        toast.success(`Attached ${okCount} item${okCount === 1 ? "" : "s"} to storage${failed > 0 ? ` (${failed} failed)` : ""}`)
+      } else {
+        toast.error("Upload failed")
+      }
     })
-    onChange({ assignments: next })
-    toast.success(`Attached ${chosen.length} item${chosen.length === 1 ? "" : "s"} — saved to storage on run`)
   }
 
   function openFilePicker(accountId: number) {
@@ -219,9 +231,18 @@ export function PostMediaPanel({
           variant="secondary"
           size="sm"
           className="h-8 w-full text-xs"
+          disabled={bunchUploading}
           onClick={() => bunchInputRef.current?.click()}
         >
-          <Layers className="size-3.5" /> Upload bunch
+          {bunchUploading ? (
+            <>
+              <Loader2 className="size-3.5 animate-spin" /> Uploading{bunchProgress ? ` ${bunchProgress.done}/${bunchProgress.total}` : ""}…
+            </>
+          ) : (
+            <>
+              <Layers className="size-3.5" /> Upload bunch
+            </>
+          )}
         </Button>
       )}
 
@@ -256,28 +277,21 @@ export function PostMediaPanel({
 
                 {/* Thumbnails */}
                 <div className="mt-2.5 flex flex-wrap gap-1.5">
-                  {items.map((it, idx) => {
-                    const src = it.pendingKey ? getPendingUrl(it.pendingKey) : it.mediaUrl
-                    return (
+                  {items.map((it, idx) => (
                       <div
-                        key={it.pendingKey ?? `${it.mediaId}-${idx}`}
+                        key={`${it.mediaId}-${idx}`}
                         className="relative size-14 overflow-hidden rounded-md border border-border bg-background"
                       >
                         {it.kind === "video" ? (
                           // eslint-disable-next-line jsx-a11y/media-has-caption
-                          <video src={src} muted playsInline preload="metadata" className="size-full object-cover" />
+                          <video src={it.mediaUrl} muted playsInline preload="metadata" className="size-full object-cover" />
                         ) : (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={src || "/placeholder.svg"} alt={it.mediaName} className="size-full object-cover" />
+                          <img src={it.mediaUrl || "/placeholder.svg"} alt={it.mediaName} className="size-full object-cover" />
                         )}
                         <span className="absolute left-0.5 top-0.5 rounded bg-black/60 px-1 text-[9px] font-semibold text-white">
                           {idx + 1}
                         </span>
-                        {it.pendingKey && (
-                          <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 to-transparent px-0.5 py-0.5 text-center text-[8px] font-medium text-white">
-                            On run
-                          </span>
-                        )}
                         <button
                           type="button"
                           aria-label="Remove media"
@@ -287,8 +301,7 @@ export function PostMediaPanel({
                           <X className="size-3" />
                         </button>
                       </div>
-                    )
-                  })}
+                    ))}
                   {uploading && (
                     <div className="flex size-14 items-center justify-center rounded-md border border-border bg-background">
                       <Loader2 className="size-4 animate-spin text-muted-foreground" />

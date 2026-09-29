@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Upload, FolderOpen, ImageIcon, Loader2, Film, Shuffle, Clapperboard, ArrowDownWideNarrow, Layers } from "lucide-react"
 import { uploadMedia } from "@/app/actions/storage"
-import { registerPendingFile, getPendingUrl, revokePendingFile } from "@/lib/workflows/pending-uploads"
+import { startBunchUpload, isNodeUploading, getNodeUploadProgress, subscribe as subscribeBgUploads } from "@/lib/workflows/bg-uploads"
 import { LinkStickerEditor, randomLinkPlacement } from "@/components/publications/link-sticker-editor"
 import {
   emptyStoryLink,
@@ -37,12 +37,14 @@ interface StoryPanelValue {
  * Highlight name field appears and the posted story is promoted to a highlight.
  */
 export function StoryPanel({
+  nodeId,
   mode,
   accounts,
   media: initialMedia,
   value,
   onChange,
 }: {
+  nodeId: string
   mode: "story" | "highlight"
   accounts: WfAccount[]
   media: WfMedia[]
@@ -57,6 +59,13 @@ export function StoryPanel({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadTargetRef = useRef<number | null>(null)
   const bunchInputRef = useRef<HTMLInputElement>(null)
+
+  // Subscribe to background upload tracker so the spinner persists across
+  // unmount/remount cycles (e.g. user closes and re-opens the panel).
+  const [, bgTick] = useState(0)
+  useEffect(() => subscribeBgUploads(() => bgTick((n) => n + 1)), [])
+  const bunchUploading = isNodeUploading(nodeId)
+  const bunchProgress = getNodeUploadProgress(nodeId)
 
   const isHighlight = mode === "highlight"
 
@@ -122,54 +131,54 @@ export function StoryPanel({
     () =>
       accounts.filter((acc) => {
         const a = assignmentFor(acc.id)
-        return (Boolean(a?.mediaId) || Boolean(a?.pendingKey)) && Boolean(a?.link.url.trim())
+        return Boolean(a?.mediaId) && Boolean(a?.link.url.trim())
       }).length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [accounts, value.assignments],
   )
 
   function setMedia(accountId: number, m: WfMedia) {
-    const prev = assignmentFor(accountId)?.pendingKey
-    if (prev) revokePendingFile(prev)
-    setAssignment(accountId, { mediaId: m.id, mediaUrl: m.blobUrl, mediaName: m.name, kind: m.kind, pendingKey: null })
+    setAssignment(accountId, { mediaId: m.id, mediaUrl: m.blobUrl, mediaName: m.name, kind: m.kind })
   }
 
   function clearMedia(accountId: number) {
-    const prev = assignmentFor(accountId)?.pendingKey
-    if (prev) revokePendingFile(prev)
-    setAssignment(accountId, { mediaId: null, mediaUrl: null, mediaName: null, kind: null, pendingKey: null })
+    setAssignment(accountId, { mediaId: null, mediaUrl: null, mediaName: null, kind: null })
   }
 
-  // "Upload bunch": pick multiple photos/videos at once; they fill accounts in
-  // order (file[i] -> account[i]). Extra files beyond the account count are
-  // ignored; fewer files than accounts leaves the rest untouched. Files are held
-  // in the pending registry and uploaded to storage on run.
   function handleBunch(files: FileList | null) {
     if (!files || files.length === 0 || accounts.length === 0) return
-    // Copy out of the live FileList before clearing the input, otherwise
-    // resetting input.value empties `files` before we read it.
     const chosen = Array.from(files).slice(0, accounts.length)
     if (bunchInputRef.current) bunchInputRef.current.value = ""
-    const others = value.assignments
-    const next: StoryAssignment[] = accounts.map((acc, i) => {
-      const existing = others.find((a) => a.accountId === acc.id)
-      const base: StoryAssignment = existing ?? {
-        accountId: acc.id,
-        mediaId: null,
-        mediaUrl: null,
-        mediaName: null,
-        kind: null,
-        link: emptyStoryLink(),
+
+    const pairs = chosen.map((file, i) => ({ accountId: accounts[i].id, file }))
+    const snap = value
+
+    startBunchUpload(nodeId, pairs, (fd) => uploadMedia(fd), (results) => {
+      const others = snap.assignments
+      const next: StoryAssignment[] = accounts.map((acc) => {
+        const existing = others.find((a) => a.accountId === acc.id)
+        const base: StoryAssignment = existing ?? {
+          accountId: acc.id,
+          mediaId: null,
+          mediaUrl: null,
+          mediaName: null,
+          kind: null,
+          link: emptyStoryLink(),
+        }
+        const r = results.find((x) => x.accountId === acc.id)
+        if (!r?.media) return base
+        return { ...base, mediaId: r.media.id, mediaUrl: r.media.blobUrl, mediaName: r.media.name, kind: r.media.kind }
+      })
+      onChange({ ...snap, assignments: next })
+
+      const okCount = results.filter((r) => r.media).length
+      const failed = pairs.length - okCount
+      if (okCount > 0) {
+        toast.success(`Attached ${okCount} item${okCount === 1 ? "" : "s"} to storage${failed > 0 ? ` (${failed} failed)` : ""}`)
+      } else {
+        toast.error("Upload failed")
       }
-      const file = chosen[i]
-      if (!file) return base
-      if (base.pendingKey) revokePendingFile(base.pendingKey)
-      const key = registerPendingFile(file)
-      const kind = file.type.startsWith("video") ? "video" : "image"
-      return { ...base, mediaId: null, mediaUrl: null, mediaName: file.name, kind, pendingKey: key }
     })
-    onChange({ ...value, assignments: next })
-    toast.success(`Attached ${chosen.length} item${chosen.length === 1 ? "" : "s"} — saved to storage on run`)
   }
 
   function openFilePicker(accountId: number) {
@@ -248,9 +257,18 @@ export function StoryPanel({
           variant="secondary"
           size="sm"
           className="h-8 w-full px-2 text-xs"
+          disabled={bunchUploading}
           onClick={() => bunchInputRef.current?.click()}
         >
-          <Layers className="size-3.5" /> Upload bunch
+          {bunchUploading ? (
+            <>
+              <Loader2 className="size-3.5 animate-spin" /> Uploading{bunchProgress ? ` ${bunchProgress.done}/${bunchProgress.total}` : ""}…
+            </>
+          ) : (
+            <>
+              <Layers className="size-3.5" /> Upload bunch
+            </>
+          )}
         </Button>
       )}
 
@@ -270,9 +288,8 @@ export function StoryPanel({
             const a = assignmentFor(acc.id)
             const uploading = uploadingFor === acc.id
             const initial = (acc.username || acc.label || "?").charAt(0).toUpperCase()
-            const skipped = (!a?.mediaId && !a?.pendingKey) || !a?.link.url.trim()
-            const previewUrl = a?.pendingKey ? getPendingUrl(a.pendingKey) : a?.mediaUrl
-            const preview = previewUrl ? { blobUrl: previewUrl, kind: a?.kind ?? "image" } : null
+            const skipped = !a?.mediaId || !a?.link.url.trim()
+            const preview = a?.mediaUrl ? { blobUrl: a.mediaUrl, kind: a?.kind ?? "image" } : null
             return (
               <li key={acc.id} className="rounded-lg border border-border bg-muted/30 p-3">
                 <div className="flex items-center gap-2">
