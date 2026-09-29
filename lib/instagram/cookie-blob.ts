@@ -237,6 +237,14 @@ export function decodeCookieBlob(input: string): CookieBlob {
     authorization = `IGT:2:${Buffer.from(payload).toString("base64")}`
     generated.push("authorization")
   }
+  // Last resort: when we only have ds_user_id (e.g. fresh autoreg blob before
+  // login), synthesize a minimal bearer so the blob is importable. The account
+  // won't be fully authenticated until a proper login refreshes the session.
+  if (!authorization && dsUserId) {
+    const payload = JSON.stringify({ ds_user_id: String(dsUserId), sessionid: "", should_use_header_over_cookies: true })
+    authorization = `IGT:2:${Buffer.from(payload).toString("base64")}`
+    generated.push("authorization")
+  }
   if (!authorization) {
     throw new Error(
       "Cookie has no session: provide either an authorization/bearer token, or sessionid + ds_user_id",

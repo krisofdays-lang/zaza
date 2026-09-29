@@ -517,6 +517,9 @@ export class InstagramRegistration {
 
   private updateState(resp: AxiosResponse) {
     const auth = captureAuthHeaders(resp)
+    if (auth.bearer && !this.bearer) {
+      this.onStep("auth_captured", `Bearer captured (${auth.bearer.slice(0, 30)}...)`)
+    }
     if (auth.bearer) this.bearer = auth.bearer
     if (auth.mid) { this.mid = auth.mid; this.cookies.set("mid", auth.mid) }
     if (auth.claim) this.claim = auth.claim

@@ -257,7 +257,7 @@ export function commonHeaders(ctx: HeadersContext): Record<string, string> {
     "user-agent": ctx.userAgent,
     "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
     "accept-language": ctx.geo.acceptLanguage,
-    "accept-encoding": "zstd",
+    "accept-encoding": "gzip, deflate",
     "ig-intended-user-id": ctx.dsUserId || "0",
     "priority": "u=2, i",
     "x-bloks-version-id": PINNED_BLOKS_VERSION_ID,
@@ -511,7 +511,17 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
   const result: AuthCapture = {}
 
   const raw = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data ?? "")
-  const unescaped = raw.replace(/\\\\/g, "\\").replace(/\\"/g, '"').replace(/\\\//g, "/")
+
+  // Bloks responses are escaped multiple levels deep.  Build a stack of
+  // progressively unescaped copies so every regex gets a chance at each level.
+  const layers: string[] = [raw]
+  let prev = raw
+  for (let i = 0; i < 4; i++) {
+    const next = prev.replace(/\\\\/g, "\\").replace(/\\"/g, '"').replace(/\\\//g, "/")
+    if (next === prev) break
+    layers.push(next)
+    prev = next
+  }
 
   // Bearer token: header first, then response body (escaped bloks payload)
   const auth = h["ig-set-authorization"]
@@ -519,11 +529,29 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
     result.bearer = auth
   }
   if (!result.bearer) {
-    for (const text of [raw, unescaped]) {
+    for (const text of layers) {
       const m = /Bearer\s+IGT:2:[A-Za-z0-9+/=_\-]+/.exec(text)
       if (m) { result.bearer = m[0]; break }
     }
   }
+  // Bloks action format: SetAuthorizationAction carries the token as a
+  // positional argument — e.g. (bk.action…, "Bearer IGT:2:…")
+  if (!result.bearer) {
+    for (const text of layers) {
+      const m = /SetAuthorizationAction[^)]*?"(Bearer\s+IGT:2:[A-Za-z0-9+/=_\-]+)"/.exec(text)
+      if (m) { result.bearer = m[1]; break }
+    }
+  }
+  // Bloks tree format: (bk.action.caa.HandleAuthorizationResponse, ...)
+  // may contain the base64 bearer inline
+  if (!result.bearer) {
+    for (const text of layers) {
+      const m = /HandleAuthorizationResponse[^)]*?"(Bearer\s+IGT:2:[A-Za-z0-9+/=_\-]+)"/.exec(text)
+      if (m) { result.bearer = m[1]; break }
+    }
+  }
+  // Fallback: sessionid in body — synthesize bearer from sessionid + ds_user_id
+  // (done after ds_user_id extraction below)
 
   // Mid from ig-set-x-mid header or cookie
   const mid = h["ig-set-x-mid"]
@@ -543,7 +571,7 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
     result.claim = String(claim)
   }
   if (!result.claim) {
-    for (const text of [raw, unescaped]) {
+    for (const text of layers) {
       const m = /hmac\.[A-Za-z0-9_\-]{16,}/.exec(text)
       if (m) { result.claim = m[0]; break }
     }
@@ -561,8 +589,11 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
       /ds_user_id["\\s:=]+(\d{6,})/,
     ]
     for (const pat of dsPatterns) {
-      const m = pat.exec(raw) || pat.exec(unescaped)
-      if (m) { result.dsUserId = m[1]; break }
+      for (const text of layers) {
+        const m = pat.exec(text)
+        if (m) { result.dsUserId = m[1]; break }
+      }
+      if (result.dsUserId) break
     }
   }
 
@@ -580,6 +611,24 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
       const dsMatch = /ds_user_id=(\d+)/.exec(cookieStr)
       if (dsMatch) result.dsUserId = dsMatch[1]
     }
+  }
+
+  // sessionid from response body (bloks may set it via cookie actions)
+  if (!result.sessionid) {
+    for (const text of layers) {
+      const m = /sessionid["\\:=\s]+([A-Za-z0-9%]{10,})/.exec(text)
+      if (m && m[1] !== "0" && !m[1].startsWith("00000")) { result.sessionid = m[1]; break }
+    }
+  }
+
+  // Synthesize bearer when we have sessionid + ds_user_id but no bearer
+  if (!result.bearer && result.sessionid && result.dsUserId) {
+    const payload = JSON.stringify({
+      ds_user_id: result.dsUserId,
+      sessionid: result.sessionid,
+      should_use_header_over_cookies: true,
+    })
+    result.bearer = `Bearer IGT:2:${Buffer.from(payload).toString("base64")}`
   }
 
   // RUR from header
