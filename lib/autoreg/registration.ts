@@ -1359,7 +1359,7 @@ export class InstagramRegistration {
       return
     }
 
-    await sleep(1000)
+    await sleep(500 + Math.random() * 700)
 
     // Phase 2: ACTION — submit with experience_id, expect APPROVED
     const resp2 = await postGraphqlBloks(
@@ -1509,15 +1509,12 @@ export class InstagramRegistration {
       // ── Phase 2: Registration steps ─────────────────────────────────
       this.checkCancelled()
       await this.step1()
-      await this.stepDelay()
 
       this.checkCancelled()
       await this.fetchPasswordKey()
-      await this.stepDelay()
 
       this.checkCancelled()
       await this.step2()
-      await this.stepDelay()
 
       // Step 3: contact point
       this.checkCancelled()
@@ -1553,7 +1550,6 @@ export class InstagramRegistration {
         )
       }
       this.onStep("code_received", `Code: ${this.verificationCode}`)
-      await this.stepDelay()
 
       // Step 5: verify code
       this.checkCancelled()
@@ -1597,8 +1593,6 @@ export class InstagramRegistration {
         return this.buildResult(true)
       }
 
-      await this.stepDelay()
-
       // ── Phase 4: NUX completion ─────────────────────────────────────
       // Required to transition account out of partially_created state.
       // Without APPROVED from consent, the account gets banned in ~30 min.
@@ -1606,10 +1600,10 @@ export class InstagramRegistration {
       if (!this.cancelled) {
         try {
           await this.nuxProfileSkip()
-          await sleep(3000)
+          await sleep(600 + Math.random() * 1000)
           if (!this.cancelled) {
             await this.nuxRegTransition()
-            await sleep(3000)
+            await sleep(600 + Math.random() * 1000)
           }
           if (!this.cancelled) {
             nuxConsentReached = true
