@@ -149,6 +149,14 @@ export class InstagramRegistration {
   private sessionid = ""
   private region = ""
 
+  // Cookie jar — captures set-cookie from every response and sends them back,
+  // exactly like a real iOS client. Without this, the absence of cookies
+  // alongside full device headers is Instagram's strongest automation signal.
+  private cookies = new Map<string, string>()
+
+  // Per-registration connection UUID (Tigon/MNS h2 connection fingerprint).
+  private connUuid: string
+
   // Verification clients
   private emailClient: AnyMessageClient | null = null
   private smsClient: TextVerifiedClient | null = null
@@ -177,6 +185,9 @@ export class InstagramRegistration {
     this.aacCs = genAacCs()
     this.qplInstanceId = Math.floor(Math.random() * 1e18)
     this.aacInitTs = Math.floor(Date.now() / 1000) - 30
+    this.connUuid = Array.from({ length: 32 }, () =>
+      Math.floor(Math.random() * 16).toString(16),
+    ).join("")
   }
 
   /** Set callback for step progress updates. */
@@ -215,6 +226,9 @@ export class InstagramRegistration {
       dsUserId: this.dsUserId || undefined,
       claim: this.claim || undefined,
       csrf: this.csrf || undefined,
+      cookies: this.cookies,
+      rur: this.rur || undefined,
+      connUuid: this.connUuid,
     }
   }
 
@@ -504,13 +518,33 @@ export class InstagramRegistration {
   private updateState(resp: AxiosResponse) {
     const auth = captureAuthHeaders(resp)
     if (auth.bearer) this.bearer = auth.bearer
-    if (auth.mid) this.mid = auth.mid
+    if (auth.mid) { this.mid = auth.mid; this.cookies.set("mid", auth.mid) }
     if (auth.claim) this.claim = auth.claim
-    if (auth.dsUserId) this.dsUserId = auth.dsUserId
-    if (auth.csrf) this.csrf = auth.csrf
-    if (auth.rur) this.rur = auth.rur
-    if (auth.sessionid) this.sessionid = auth.sessionid
+    if (auth.dsUserId) { this.dsUserId = auth.dsUserId; this.cookies.set("ds_user_id", auth.dsUserId) }
+    if (auth.csrf) { this.csrf = auth.csrf; this.cookies.set("csrftoken", auth.csrf) }
+    if (auth.rur) { this.rur = auth.rur; this.cookies.set("rur", auth.rur) }
+    if (auth.sessionid) { this.sessionid = auth.sessionid; this.cookies.set("sessionid", auth.sessionid) }
     if (auth.region) this.region = auth.region
+
+    // Capture ALL cookies from set-cookie headers — exactly what the real iOS
+    // app does. The cookie jar grows over the registration, and every subsequent
+    // request sends them back via the cookie header.
+    const sc = resp.headers?.["set-cookie"]
+    if (sc) {
+      const items = Array.isArray(sc) ? sc : [String(sc)]
+      for (const raw of items) {
+        const pair = String(raw).split(";")[0]?.trim()
+        if (!pair) continue
+        const eqIdx = pair.indexOf("=")
+        if (eqIdx <= 0) continue
+        this.cookies.set(pair.slice(0, eqIdx), pair.slice(eqIdx + 1))
+      }
+    }
+
+    // Seed ig_did cookie from our device_id (real app sets this on first launch)
+    if (!this.cookies.has("ig_did")) {
+      this.cookies.set("ig_did", this.guid)
+    }
 
     const ctx = extractRegContext(resp)
     if (ctx) this.regContext = ctx
