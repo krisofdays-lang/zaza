@@ -112,7 +112,7 @@ export function AccountsTable({
         setRefreshingIds((prev) => {
           const next = new Map(prev)
           for (const [id, entry] of prev) {
-            if (now - entry.start > 60_000) {
+            if (now - entry.start > 15_000) {
               next.delete(id)
               settled.push({ id, status: statusMap!.get(id) })
               continue
@@ -134,7 +134,7 @@ export function AccountsTable({
         setRefreshingIds((prev) => {
           const next = new Map(prev)
           for (const [id, entry] of prev) {
-            if (now - entry.start > 60_000) {
+            if (now - entry.start > 15_000) {
               next.delete(id)
               settled.push({ id, status: undefined })
             }
