@@ -235,6 +235,7 @@ export async function runWorkflow(
       accountIds: ids,
       status: "running",
       cancelRequested: false,
+      total: ids.length,
       processed: 0,
       actionsCount: 0,
       progress: {},

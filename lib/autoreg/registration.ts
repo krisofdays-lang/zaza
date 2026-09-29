@@ -1182,18 +1182,14 @@ export class InstagramRegistration {
 
     // Debug: log auth capture results from step10
     const step10Raw = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data)
-    this.onStep("step10_debug", [
-      `HTTP ${resp.status}`,
-      `bearer=${this.bearer ? "YES" : "NO"}`,
-      `sessionid=${this.sessionid ? "YES" : "NO"}`,
-      `dsUserId=${this.dsUserId || "NO"}`,
-      `ig-set-authorization=${resp.headers?.["ig-set-authorization"] ? "YES" : "NO"}`,
-      `set-cookie=${resp.headers?.["set-cookie"] ? "YES" : "NO"}`,
-      `body_has_Bearer=${step10Raw.includes("Bearer") ? "YES" : "NO"}`,
-      `body_has_sessionid=${step10Raw.includes("sessionid") ? "YES" : "NO"}`,
-      `body_has_ds_user_id=${step10Raw.includes("ds_user_id") ? "YES" : "NO"}`,
-      `body[:200]=${step10Raw.slice(0, 200)}`,
-    ].join(" | "))
+    const step10Headers = resp.headers ? Object.keys(resp.headers).filter(k => k.startsWith("ig-set") || k.startsWith("set-cookie") || k.startsWith("x-ig")).join(",") : "none"
+    const step10Cookie = resp.headers?.["set-cookie"] ? (Array.isArray(resp.headers["set-cookie"]) ? resp.headers["set-cookie"].join(" | ") : String(resp.headers["set-cookie"])).slice(0, 300) : "none"
+    console.log(`[STEP10 DEBUG] HTTP ${resp.status} | bearer=${this.bearer ? this.bearer.slice(0, 40) : "EMPTY"} | sessionid=${this.sessionid || "EMPTY"} | dsUserId=${this.dsUserId || "EMPTY"} | mid=${this.mid || "EMPTY"}`)
+    console.log(`[STEP10 DEBUG] ig-headers: ${step10Headers}`)
+    console.log(`[STEP10 DEBUG] set-cookie: ${step10Cookie}`)
+    console.log(`[STEP10 DEBUG] body has Bearer=${step10Raw.includes("Bearer")} sessionid=${step10Raw.includes("sessionid")} ds_user_id=${step10Raw.includes("ds_user_id")}`)
+    console.log(`[STEP10 DEBUG] body[:500]: ${step10Raw.slice(0, 500)}`)
+    this.onStep("step10_debug", `HTTP ${resp.status} | bearer=${this.bearer ? "YES" : "NO"} | sid=${this.sessionid ? "YES" : "NO"} | ds=${this.dsUserId || "NO"}`)
 
     // Check for restrictions
     const restriction = this.detectRestriction(resp)
