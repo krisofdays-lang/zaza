@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto"
 import { db } from "@/lib/db"
 import { igAutoregAccounts, igAutoregLogs, igAutoregJobs } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
-import { InstagramRegistration, type RegConfig, type RegResult, type RegMethod } from "./registration"
+import { registerViaPython, type PyAutoregConfig, type PyAutoregResult } from "@/lib/instagram/py-bridge"
+
+export type RegMethod = "email" | "sms"
 
 export interface AutoregJobConfig {
   method: RegMethod
@@ -18,7 +20,6 @@ export interface AutoregJobConfig {
 interface RunningJob {
   jobId: string
   cancel: () => void
-  activeRegs: Set<InstagramRegistration>
 }
 
 // Only one job at a time
@@ -46,15 +47,11 @@ export async function startAutoregJob(config: AutoregJobConfig): Promise<string>
   })
 
   let cancelled = false
-  const activeRegs = new Set<InstagramRegistration>()
-  const cancelFn = () => {
-    cancelled = true
-    for (const reg of activeRegs) reg.cancel()
-  }
-  currentJob = { jobId, cancel: cancelFn, activeRegs }
+  const cancelFn = () => { cancelled = true }
+  currentJob = { jobId, cancel: cancelFn }
 
   // Run in background (fire and forget)
-  runJob(jobId, config, () => cancelled, activeRegs).catch(console.error).finally(() => {
+  runJob(jobId, config, () => cancelled).catch(console.error).finally(() => {
     if (currentJob?.jobId === jobId) currentJob = null
   })
 
@@ -78,7 +75,6 @@ async function runJob(
   jobId: string,
   config: AutoregJobConfig,
   isCancelled: () => boolean,
-  activeRegs: Set<InstagramRegistration>,
 ) {
   let completed = 0
   let failed = 0
@@ -124,14 +120,13 @@ async function runJob(
             threadIdx,
             {
               method: config.method,
-              proxyUrl: proxy,
+              proxy,
               anymessageApiKey: config.anymessageApiKey,
               anymessageDomain: config.anymessageDomain,
-              textverifiedToken: config.textverifiedToken,
+              textverifiedApiKey: config.textverifiedToken,
             },
             config.groupLabel || "",
             isCancelled,
-            activeRegs,
           ).then((success) => {
             if (success) completed++
             else failed++
@@ -184,15 +179,14 @@ async function checkCancelRequested(jobId: string): Promise<boolean> {
   return job?.cancelRequested ?? false
 }
 
-// ── Single registration with DB logging ──────────────────────────────────
+// ── Single registration via Python backend ──────────────────────────────
 
 async function runSingleRegistration(
   jobId: string,
   threadIndex: number,
-  regConfig: RegConfig,
+  pyConfig: PyAutoregConfig,
   groupLabel: string,
   isCancelled: () => boolean,
-  activeRegs: Set<InstagramRegistration>,
 ): Promise<boolean> {
   // Create log entry
   const [logRow] = await db
@@ -200,24 +194,16 @@ async function runSingleRegistration(
     .values({
       jobId,
       threadIndex,
-      proxy: regConfig.proxyUrl,
-      method: regConfig.method,
+      proxy: pyConfig.proxy,
+      method: pyConfig.method,
       step: "init",
       status: "running",
     })
     .returning({ id: igAutoregLogs.id })
 
   const logId = logRow.id
-  const reg = new InstagramRegistration(regConfig)
 
-  reg.setOnStep((step, detail) => {
-    db.update(igAutoregLogs)
-      .set({ step, stepDetail: detail || "" })
-      .where(eq(igAutoregLogs.id, logId))
-      .catch(console.error)
-  })
-
-  // Check cancellation
+  // Check cancellation before starting
   if (isCancelled()) {
     await db
       .update(igAutoregLogs)
@@ -226,11 +212,23 @@ async function runSingleRegistration(
     return false
   }
 
-  activeRegs.add(reg)
-  if (isCancelled()) reg.cancel()
-
   try {
-    const result = await reg.run()
+    await db
+      .update(igAutoregLogs)
+      .set({ step: "registering", stepDetail: "calling python service" })
+      .where(eq(igAutoregLogs.id, logId))
+
+    const result = await registerViaPython(pyConfig)
+
+    // Update log with the last step from the Python service
+    if (result.steps?.length) {
+      const lastStep = result.steps[result.steps.length - 1]
+      await db
+        .update(igAutoregLogs)
+        .set({ step: lastStep.step, stepDetail: lastStep.detail || "" })
+        .where(eq(igAutoregLogs.id, logId))
+        .catch(console.error)
+    }
 
     if (result.success) {
       // Save to autoreg accounts table
@@ -241,7 +239,7 @@ async function runSingleRegistration(
           password: result.password,
           email: result.email,
           phone: result.phone,
-          igUserId: result.igUserId,
+          igUserId: result.dsUserId,
           bearerToken: result.bearer,
           mid: result.mid,
           claim: result.claim,
@@ -265,8 +263,8 @@ async function runSingleRegistration(
           timezone: result.timezone,
           userAgent: result.userAgent,
           sessionBlob: result.sessionBlob,
-          proxyUrl: regConfig.proxyUrl,
-          regMethod: regConfig.method,
+          proxyUrl: pyConfig.proxy,
+          regMethod: pyConfig.method,
           groupLabel,
           status: "created",
         })
@@ -304,18 +302,15 @@ async function runSingleRegistration(
     }
   } catch (err) {
     const msg = (err as Error).message
-    const wasCancelled = msg === "Registration cancelled"
     await db
       .update(igAutoregLogs)
       .set({
-        status: wasCancelled ? "cancelled" : "error",
-        error: wasCancelled ? "Cancelled" : msg,
+        status: "error",
+        error: msg,
         finishedAt: new Date(),
       })
       .where(eq(igAutoregLogs.id, logId))
 
     return false
-  } finally {
-    activeRegs.delete(reg)
   }
 }

@@ -21,11 +21,13 @@ from .client import InstagramClient
 from .config import TLS_PROXY_REQUIRED, TLS_PROXY_URL
 from .models import ReelPublishRequest, ReelPublishResponse
 from .reel import publish_reel_flow
+from .autoreg.api import router as autoreg_router
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("ig.api")
 
 app = FastAPI(title="Instagram Request Service", version="1.0.0")
+app.include_router(autoreg_router)
 
 
 @app.get("/health")

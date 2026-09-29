@@ -9,6 +9,8 @@ dependencies = [
     "httpx[http2]==0.28.1",
     "pydantic==2.10.4",
     "python-multipart==0.0.20",
+    "requests>=2.31.0",
+    "PySocks>=1.7.1",
 ]
 
 [tool.uvicorn]

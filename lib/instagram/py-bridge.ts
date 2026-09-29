@@ -62,6 +62,86 @@ export interface PyReelResult {
   endpoint?: string
 }
 
+// ── Autoreg ──────────────────────────────────────────────────────────────
+
+export interface PyAutoregConfig {
+  method: "email" | "sms"
+  proxy: string
+  igPassword?: string
+  anymessageApiKey?: string
+  anymessageDomain?: string
+  anymessageSite?: string
+  textverifiedApiKey?: string
+  textverifiedUsername?: string
+  stepDelayMin?: number
+  stepDelayMax?: number
+  codeWaitTimeout?: number
+  codePollInterval?: number
+}
+
+export interface PyAutoregResult {
+  success: boolean
+  error: string
+  nuxApproved: boolean
+  username: string
+  password: string
+  email: string
+  phone: string
+  bearer: string
+  mid: string
+  claim: string
+  dsUserId: string
+  csrf: string
+  rur: string
+  deviceId: string
+  familyDeviceId: string
+  phoneId: string
+  pigeonSession: string
+  fbAnonId: string
+  waterfallId: string
+  machineId: string
+  cloudTrustToken: string
+  aacJid: string
+  aacCs: string
+  iphoneModel: string
+  iosVersion: string
+  appVersion: string
+  locale: string
+  timezone: string
+  userAgent: string
+  sessionBlob: Record<string, unknown>
+  steps: { step: string; detail: string; ts: number }[]
+}
+
+export async function registerViaPython(config: PyAutoregConfig): Promise<PyAutoregResult> {
+  const res = await fetch(serviceUrl("/autoreg/register"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(config),
+  })
+
+  if (!res.ok && res.status >= 500) {
+    const text = await res.text().catch(() => "")
+    return {
+      success: false,
+      error: `ig_service_${res.status}: ${text.slice(0, 200)}`,
+      nuxApproved: false,
+      username: "", password: "", email: "", phone: "",
+      bearer: "", mid: "", claim: "", dsUserId: "", csrf: "", rur: "",
+      deviceId: "", familyDeviceId: "", phoneId: "", pigeonSession: "",
+      fbAnonId: "", waterfallId: "", machineId: "", cloudTrustToken: "",
+      aacJid: "", aacCs: "",
+      iphoneModel: "", iosVersion: "", appVersion: "",
+      locale: "", timezone: "", userAgent: "",
+      sessionBlob: {},
+      steps: [],
+    }
+  }
+  return (await res.json()) as PyAutoregResult
+}
+
+// ── Reel publishing ─────────────────────────────────────────────────────
+
 // Publish one reel via the Python service. Mirrors publishReelFlow()'s contract
 // so the runner can swap between the two with no behavioral change.
 export async function publishReelViaPython(
