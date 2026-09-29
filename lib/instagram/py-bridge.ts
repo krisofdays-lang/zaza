@@ -46,6 +46,9 @@ function accountPayload(a: Account) {
     appVersion: a.appVersion,
     locale: a.locale,
     timezone: a.timezone,
+    userAgent: a.userAgent,
+    clockOffsetMs: a.clockOffsetMs,
+    prngSeed: a.prngSeed,
   }
 }
 

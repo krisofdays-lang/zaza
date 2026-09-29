@@ -11,8 +11,11 @@ returned to Next.js via the API response so the caller persists them.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
+import os
 import random
+import struct
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -30,7 +33,7 @@ from .devices import (
     tz_offset_seconds,
 )
 from .models import Account
-from .nav_chain import NavSession
+from .nav_chain import ClockSource, NavSession
 from .transport import build_client
 
 
@@ -45,6 +48,25 @@ def js_json(obj: Any) -> str:
 def encode_uri_component(s: str) -> str:
     # encodeURIComponent leaves A-Za-z0-9 and -_.!~*'() unescaped.
     return quote(s, safe="!~*'()")
+
+
+# ── Per-account seeded PRNG (xoroshiro128+) ────────────────────────────────
+# Mirror of the TS SeededPRNG so outputs from different accounts are independent.
+class SeededPRNG:
+    def __init__(self, seed_hex: str) -> None:
+        h = hashlib.sha256(seed_hex.encode()).digest()
+        nonce = os.urandom(8)
+        combined = hashlib.sha256(h + nonce).digest()
+        self.s0 = struct.unpack_from("<Q", combined, 0)[0] or 1
+        self.s1 = struct.unpack_from("<Q", combined, 8)[0] or 1
+
+    def next(self) -> float:
+        s0, s1 = self.s0, self.s1
+        result = (s0 + s1) & 0xFFFFFFFFFFFFFFFF
+        s1 ^= s0
+        self.s0 = (((s0 << 24) | (s0 >> 40)) & 0xFFFFFFFFFFFFFFFF) ^ s1 ^ ((s1 << 16) & 0xFFFFFFFFFFFFFFFF)
+        self.s1 = ((s1 << 37) | (s1 >> 27)) & 0xFFFFFFFFFFFFFFFF
+        return ((result >> 11) & 0x1FFFFFFFFFFFFF) / 0x20000000000000
 
 
 def random_hex(length: int) -> str:
@@ -105,17 +127,45 @@ def decode_bearer(bearer: str) -> tuple[str, str]:
         return "", ""
 
 
+class _ClientClockSource:
+    """Adapts InstagramClient's clock/PRNG for NavSession."""
+    def __init__(self, client: "InstagramClient") -> None:
+        self._c = client
+    def now_ms(self) -> float:
+        return self._c.account_now()
+    def random(self) -> float:
+        return self._c.account_random()
+
+
 class InstagramClient:
     def __init__(self, account: Account) -> None:
         self.account = account
         self._ds_user_id, self._session_id = decode_bearer(account.bearer_token)
-        self.nav = NavSession()
+        # Per-account clock offset and seeded PRNG (mirrors TS client).
+        self._clock_offset_ms = account.clock_offset_ms or 0
+        seed = account.prng_seed or os.urandom(32).hex()
+        self._prng = SeededPRNG(seed)
+        # Wire clock source into nav so pigeon timestamps are isolated.
+        clock_source = _ClientClockSource(self)
+        self.nav = NavSession(clock_source)
         # When set (e.g. to a ReelJourney), its header chain / endpoint override
         # the generic nav stack for the duration of a scripted publish flow.
         self.nav_override = None
         self._rur = ""
         self._net: dict[str, float] | None = None
         self._http = build_client(account)
+        # Per-connection UUID (Tigon/MNS h2 connection identifier).
+        self._conn_uuid = self.account_random_hex(32)
+        # In-memory cookie jar, seeded from bearer token fields.
+        self._cookies: dict[str, str] = {}
+        if self._ds_user_id:
+            self._cookies["ds_user_id"] = self._ds_user_id
+        if self._session_id:
+            self._cookies["sessionid"] = self._session_id
+        if account.mid:
+            self._cookies["mid"] = account.mid
+        if account.device_id:
+            self._cookies["ig_did"] = account.device_id
 
     def close(self) -> None:
         self._http.close()
@@ -125,6 +175,23 @@ class InstagramClient:
 
     def __exit__(self, *exc: object) -> None:
         self.close()
+
+    # ── per-account clock & PRNG (mirror TS accountNow/accountRandom) ──────
+    def account_now(self) -> float:
+        """time.time()*1000 shifted by this account's stored clock offset."""
+        return time.time() * 1000 + self._clock_offset_ms
+
+    def account_now_sec(self) -> int:
+        return int(self.account_now() / 1000)
+
+    def account_random(self) -> float:
+        """Per-account random float in [0, 1) — replaces random.random()."""
+        return self._prng.next()
+
+    def account_random_hex(self, length: int) -> str:
+        return "".join(
+            "0123456789abcdef"[int(self.account_random() * 16)] for _ in range(length)
+        )
 
     # ── identity accessors (mirror the TS getters) ──────────────────────────
     @property
@@ -145,6 +212,10 @@ class InstagramClient:
         # device id (which feeds the x-ig-family-device-id header). Falls back
         # for older accounts captured before phone_id was stored separately.
         return self.account.phone_id_field or self.account.family_device_id or self.account.device_id
+
+    @property
+    def family_device_id(self) -> str:
+        return self.account.family_device_id or self.account.device_id
 
     @property
     def ios_version(self) -> str:
@@ -178,24 +249,26 @@ class InstagramClient:
     @property
     def _net_baseline(self) -> dict[str, float]:
         if self._net is None:
+            r = self.account_random
             self._net = {
-                "base_kbps": 450 + random.randint(0, 899),
-                "rtt_base": 2 + random.randint(0, 5),
+                "base_kbps": 450 + int(r() * 900),
+                "rtt_base": 2 + int(r() * 6),
             }
         return self._net
 
     def _bandwidth_headers(self) -> dict[str, str]:
+        r = self.account_random
         def jitter(base: float, pct: float) -> float:
-            return base * (1 + (random.random() * 2 - 1) * pct)
+            return base * (1 + (r() * 2 - 1) * pct)
 
         net = self._net_baseline
         kbps = jitter(net["base_kbps"], 0.15)
-        sensitive = kbps * (0.95 + random.random() * 0.05)
+        sensitive = kbps * (0.95 + r() * 0.05)
         rtt = max(1, round(jitter(net["rtt_base"], 0.4)))
-        c = 60 + random.randint(0, 139)
-        tbw = 30000 + random.randint(0, 89999)
-        uplat = 30 + random.randint(0, 299)
-        conn_speed = max(10, round(kbps * (0.2 + random.random() * 0.5)))
+        c = 60 + int(r() * 140)
+        tbw = 30000 + int(r() * 90000)
+        uplat = 30 + int(r() * 300)
+        conn_speed = max(10, round(kbps * (0.2 + r() * 0.5)))
         cm_kbps = max(20.0, jitter(net["base_kbps"] * 0.3, 0.5))
         cm_latency = max(1.0, jitter(net["rtt_base"] * 0.6, 0.5))
         abr_kbps = max(20, round(jitter(net["base_kbps"] * 0.25, 0.4)))
@@ -219,23 +292,25 @@ class InstagramClient:
     def _base_headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         uid = self.uid
         loc = locale_headers(self.locale)
+        ua = self.account.user_agent or build_user_agent(
+            app_version=PINNED_IG_APP_VERSION,
+            iphone_model=self.account.iphone_model,
+            ios_version=self.ios_version,
+            locale=self.locale,
+        )
+        startup_country = (self.locale.split("_")[1] if "_" in self.locale else "US").upper()
         headers: dict[str, str] = {
             "accept-language": loc.accept_language,
             "authorization": self._bearer(),
             "ig-intended-user-id": uid,
             "ig-u-ds-user-id": uid,
-            "user-agent": build_user_agent(
-                app_version=PINNED_IG_APP_VERSION,
-                iphone_model=self.account.iphone_model,
-                ios_version=self.ios_version,
-                locale=self.locale,
-            ),
+            "user-agent": ua,
             "x-ig-app-id": APP_ID,
             "x-ig-app-locale": loc.app_locale,
             "x-ig-device-id": self.account.device_id,
             "x-device-id": self.account.device_id,
             "x-ig-device-locale": loc.device_locale,
-            "x-ig-family-device-id": self.phone_id,
+            "x-ig-family-device-id": self.family_device_id,
             "x-ig-mapped-locale": loc.mapped_locale,
             "x-ig-device-languages": js_json(
                 {
@@ -256,16 +331,21 @@ class InstagramClient:
             "x-ads-opt-out": "0",
             "x-ig-bloks-serialize-payload": "true",
             "x-ig-salt-ids": "42139649",
+            "x-ig-app-startup-country": startup_country,
         }
         if self.account.cloud_trust_token:
             headers["x-cloud-trust-token"] = self.account.cloud_trust_token
         headers.update(self._bandwidth_headers())
         headers["x-bloks-version-id"] = BLOKS_VERSION_ID
         headers.update(BLOKS_PRISM_HEADERS)
-        headers["priority"] = "u=0"
+        headers["priority"] = "u=2, i"
         headers["x-tigon-is-retry"] = "False"
         headers["x-fb-client-ip"] = "True"
         headers["x-fb-server-cluster"] = "True"
+        headers["x-fb-conn-uuid-client"] = self._conn_uuid
+        headers["x-fb-http-engine"] = "Tigon/MNS/TCP"
+        headers["x-fb-rmd"] = "state=URL_ELIGIBLE"
+        headers["accept-encoding"] = "zstd"
         if self._rur:
             headers["ig-u-rur"] = self._rur
         headers["x-pigeon-session-id"] = self.nav.get_session_id()
@@ -273,11 +353,22 @@ class InstagramClient:
         nav_src = self.nav_override or self.nav
         headers["x-ig-nav-chain"] = nav_src.chain_string()
         headers["x-ig-client-endpoint"] = nav_src.client_endpoint()
+        if self._cookies:
+            headers["cookie"] = "; ".join(f"{k}={v}" for k, v in self._cookies.items())
         if extra:
             headers.update(extra)
         return headers
 
     def _capture_claim(self, res: httpx.Response) -> None:
+        # Capture set-cookie so the jar grows over the run like a real session.
+        for raw in res.headers.get_list("set-cookie"):
+            pair = raw.split(";", 1)[0].strip()
+            if not pair:
+                continue
+            eq = pair.find("=")
+            if eq <= 0:
+                continue
+            self._cookies[pair[:eq]] = pair[eq + 1 :]
         rur = res.headers.get("ig-set-ig-u-rur") or res.headers.get("ig-u-rur")
         if rur and rur != self._rur:
             self._rur = rur

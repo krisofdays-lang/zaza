@@ -35,6 +35,9 @@ class Account(BaseModel):
     app_version: str = Field(default="437.0.0.22.50", alias="appVersion")
     locale: str = "en_US"
     timezone: str = "Europe/Moscow"
+    user_agent: str = Field(default="", alias="userAgent")
+    clock_offset_ms: int = Field(default=0, alias="clockOffsetMs")
+    prng_seed: str = Field(default="", alias="prngSeed")
 
     model_config = {"populate_by_name": True, "extra": "ignore"}
 

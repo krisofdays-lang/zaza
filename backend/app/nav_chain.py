@@ -19,6 +19,12 @@ from __future__ import annotations
 import random
 import time
 from dataclasses import dataclass, field
+from typing import Protocol
+
+
+class ClockSource(Protocol):
+    def now_ms(self) -> float: ...
+    def random(self) -> float: ...
 
 
 @dataclass(frozen=True)
@@ -62,7 +68,8 @@ def _upper_uuid() -> str:
 
 
 class NavSession:
-    def __init__(self) -> None:
+    def __init__(self, clock_source: "ClockSource | None" = None) -> None:
+        self._clock = clock_source
         self._session_id = ""
         self._session_expiry = 0.0  # ms epoch
         self._session_counter = 0
@@ -71,18 +78,24 @@ class NavSession:
         self._stack: list[_Segment] = []
         self._reset_session()
 
+    def _now_ms(self) -> float:
+        return self._clock.now_ms() if self._clock else time.time() * 1000
+
+    def _rand(self, lo: float = 0.0, hi: float = 1.0) -> float:
+        r = self._clock.random() if self._clock else random.random()
+        return lo + r * (hi - lo)
+
     def _reset_session(self) -> None:
         self._session_counter += 1
-        # A plain uppercase UUID, verified against captured traffic (NOT "UFS-…").
         self._session_id = _upper_uuid()
-        self._session_expiry = time.time() * 1000 + _rand(_SESSION_MIN_MS, _SESSION_MAX_MS)
+        self._session_expiry = self._now_ms() + self._rand(_SESSION_MIN_MS, _SESSION_MAX_MS)
         self._position = 0
         self._last_ts = 0.0
         self._stack = []
         self._push_screen(_ROOT)
 
     def _ensure_session(self) -> None:
-        if not self._session_id or time.time() * 1000 >= self._session_expiry:
+        if not self._session_id or self._now_ms() >= self._session_expiry:
             self._reset_session()
 
     def get_session_id(self) -> str:
@@ -90,10 +103,10 @@ class NavSession:
         return self._session_id
 
     def raw_client_time(self) -> str:
-        return f"{_now_sec():.6f}"
+        return f"{self._now_ms() / 1000:.6f}"
 
     def _next_ts(self) -> float:
-        t = max(_now_sec(), self._last_ts + _rand(0.1, 1.4))
+        t = max(self._now_ms() / 1000, self._last_ts + self._rand(0.1, 1.4))
         self._last_ts = t
         return t
 
