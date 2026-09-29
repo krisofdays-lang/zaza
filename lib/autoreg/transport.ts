@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance, type AxiosResponse } from "axios"
+import { HttpProxyAgent } from "http-proxy-agent"
 import { HttpsProxyAgent } from "https-proxy-agent"
 import { SocksProxyAgent } from "socks-proxy-agent"
 import {
@@ -124,10 +125,21 @@ export async function resolveGeo(proxyUrl?: string): Promise<GeoInfo> {
     acceptLanguage: "en-US;q=1.0",
   }
   try {
-    const agent = proxyUrl ? buildProxyAgent(proxyUrl) : undefined
+    // ip-api.com is plain HTTP — buildProxyAgent() returns HTTPS-only agents
+    // (CONNECT tunnel) which fail silently for HTTP targets. Use HttpProxyAgent
+    // for HTTP proxies, SocksProxyAgent for SOCKS (works for both protocols).
+    let httpAgent: HttpProxyAgent<string> | SocksProxyAgent | undefined
+    if (proxyUrl) {
+      if (proxyUrl.startsWith("socks")) {
+        httpAgent = new SocksProxyAgent(proxyUrl)
+      } else {
+        const url = proxyUrl.startsWith("http") ? proxyUrl : `http://${proxyUrl}`
+        httpAgent = new HttpProxyAgent(url)
+      }
+    }
     const resp = await axios.get("http://ip-api.com/json/?fields=countryCode,timezone", {
-      httpsAgent: agent,
-      httpAgent: agent,
+      httpAgent,
+      proxy: false,
       timeout: 10_000,
     })
     const cc = resp.data?.countryCode || "US"
@@ -306,7 +318,7 @@ export function commonHeaders(ctx: HeadersContext): Record<string, string> {
   if (ctx.cloudTrustToken) headers["x-cloud-trust-token"] = ctx.cloudTrustToken
   if (ctx.bearer) headers["authorization"] = ctx.bearer
   if (ctx.dsUserId) headers["ig-u-ds-user-id"] = ctx.dsUserId
-  if (ctx.claim) headers["x-ig-www-claim"] = ctx.claim
+  headers["x-ig-www-claim"] = ctx.claim || "0"
   if (ctx.csrf) headers["x-csrftoken"] = ctx.csrf
   if (ctx.rur) headers["ig-u-rur"] = ctx.rur
 
@@ -525,8 +537,9 @@ export function captureAuthHeaders(resp: AxiosResponse): AuthCapture {
 
   // Bearer token: header first, then response body (escaped bloks payload)
   const auth = h["ig-set-authorization"]
-  if (auth && typeof auth === "string" && auth.startsWith("Bearer")) {
-    result.bearer = auth
+  if (auth && typeof auth === "string" && auth.trim()) {
+    const val = auth.trim()
+    result.bearer = val.startsWith("Bearer") ? val : `Bearer ${val}`
   }
   if (!result.bearer) {
     for (const text of layers) {

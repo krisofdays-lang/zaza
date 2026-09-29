@@ -146,6 +146,8 @@ export class InstagramRegistration {
   private csrf = ""
   private rur = ""
   private igUserId = ""
+  private createdFbUid = ""
+  private experienceId = ""
   private sessionid = ""
   private region = ""
 
@@ -234,6 +236,33 @@ export class InstagramRegistration {
 
   private headers(): Record<string, string> {
     return commonHeaders(this.headersCtx())
+  }
+
+  private nuxNavChain(includeTransition = false): string {
+    const now = Date.now() / 1000
+    const ts = now.toFixed(6)
+    let chain =
+      `BKCdsScreenViewController:com.bloks.www.caa.login.landing_screen:1:cold_start:${ts}:::${ts},` +
+      `BKCdsScreenViewController:com.bloks.www.bloks.caa.reg.tos:9::${ts}:::${ts},` +
+      `BKCdsScreenViewController:com.bloks.www.bloks.caa.reg.profilephoto:10::${ts}:::${ts}`
+    if (includeTransition) {
+      chain += `,com.bloks.www.bloks.caa.reg.transition:11::${ts}:::${ts}`
+    }
+    return chain
+  }
+
+  private nuxHeaders(opts?: { clientEndpoint?: string; navChain?: string }): Record<string, string> {
+    const h = this.headers()
+    if (this.bearer) h["authorization"] = this.bearer
+    if (this.dsUserId) {
+      h["ig-intended-user-id"] = this.dsUserId
+      h["ig-u-ds-user-id"] = this.dsUserId
+    }
+    if (this.rur) h["ig-u-rur"] = this.rur
+    h["x-ig-www-claim"] = this.claim || "SKIP"
+    if (opts?.clientEndpoint) h["x-ig-client-endpoint"] = opts.clientEndpoint
+    if (opts?.navChain) h["x-ig-nav-chain"] = opts.navChain
+    return h
   }
 
   // ── AAC string (anti-abuse) ────────────────────────────────────────────
@@ -570,10 +599,6 @@ export class InstagramRegistration {
       ["account_disabled", "account disabled"],
       ['is_disabled":true', "account disabled"],
       ["account_suspended", "account suspended"],
-      ["spam", "spam detection triggered"],
-      ["try_again_later", "rate limited"],
-      ["try again later", "rate limited"],
-      ["generic_request_error", "generic request error"],
     ]
     for (const [needle, reason] of markers) {
       if (low.includes(needle)) return reason
@@ -1155,7 +1180,7 @@ export class InstagramRegistration {
       throw new Error(restriction)
     }
 
-    // Extract ig_user_id from response (multiple patterns like reference)
+    // Extract ig_user_id and family uid from response (matching reference)
     const raw = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data)
     const unescaped = raw.replace(/\\\\/g, "\\").replace(/\\"/g, '"').replace(/\\\//g, "/")
 
@@ -1179,6 +1204,12 @@ export class InstagramRegistration {
     // Fallback to ds_user_id from headers/cookies
     if (!this.igUserId && this.dsUserId) {
       this.igUserId = this.dsUserId
+    }
+
+    // Extract family uid (created_fb_uid) — used in NUX transition user_id
+    for (const text of [raw, unescaped]) {
+      const m = /"(?:created_fb_uid|fbuid|family_user_id)"\s*:\s*"?(\d+)"?/.exec(text)
+      if (m) { this.createdFbUid = m[1]; break }
     }
 
     // Check for signs of success (like reference: ds_user_id, sessionid, account_created in body)
@@ -1211,7 +1242,10 @@ export class InstagramRegistration {
 
     const resp = await postGraphqlBloks(
       this.client,
-      this.headers(),
+      this.nuxHeaders({
+        clientEndpoint: "com.bloks.www.bloks.caa.reg.profilephoto",
+        navChain: this.nuxNavChain(),
+      }),
       "com.bloks.www.bloks.caa.registration.profile.async",
       {},
       {
@@ -1226,6 +1260,13 @@ export class InstagramRegistration {
       },
     )
     this.updateState(resp)
+
+    // Extract experience_id (can appear in profile skip response too)
+    if (!this.experienceId) {
+      const raw = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data)
+      const m = /"experience_id"\s*:\s*"([^"]+)"/.exec(raw)
+      if (m) this.experienceId = m[1]
+    }
   }
 
   /** NUX Step 2: Registration transition */
@@ -1240,12 +1281,15 @@ export class InstagramRegistration {
       contactpoint_type: "email",
       username: this.username,
       family_device_id: this.familyDeviceId,
-      user_id: this.igUserId || this.dsUserId || null,
+      user_id: this.createdFbUid || this.igUserId || this.dsUserId || null,
     })
 
     const resp = await postGraphqlBloks(
       this.client,
-      this.headers(),
+      this.nuxHeaders({
+        clientEndpoint: "com.bloks.www.bloks.caa.reg.transition",
+        navChain: this.nuxNavChain(false),
+      }),
       "com.bloks.www.bloks.caa.reg.transition.async",
       {},
       {
@@ -1260,6 +1304,13 @@ export class InstagramRegistration {
       },
     )
     this.updateState(resp)
+
+    // Extract experience_id (can appear in transition response too)
+    if (!this.experienceId) {
+      const raw = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data)
+      const m = /"experience_id"\s*:\s*"([^"]+)"/.exec(raw)
+      if (m) this.experienceId = m[1]
+    }
   }
 
   /** NUX Step 3: Privacy consent (two-phase: PROMPT → ACTION) */
@@ -1269,7 +1320,7 @@ export class InstagramRegistration {
     // Phase 1: PROMPT — get experience_id
     const resp1 = await postGraphqlBloks(
       this.client,
-      this.headers(),
+      this.nuxHeaders(),
       "com.bloks.www.privacy.consent.prompt.action",
       {},
       {
@@ -1287,12 +1338,13 @@ export class InstagramRegistration {
       return
     }
 
-    // Extract experience_id from response
+    // Extract experience_id from PROMPT response; fall back to one captured
+    // earlier (from profile skip or transition responses).
     const expMatch = /"experience_id"\s*:\s*"([^"]+)"/.exec(raw1)
-    const experienceId = expMatch ? expMatch[1] : ""
+    if (expMatch) this.experienceId = expMatch[1]
 
-    if (!experienceId) {
-      this.onStep("nux_consent_warn", "No experience_id in consent PROMPT — skipping ACTION phase")
+    if (!this.experienceId) {
+      this.onStep("nux_consent_warn", "No experience_id found — skipping ACTION phase")
       return
     }
 
@@ -1301,7 +1353,7 @@ export class InstagramRegistration {
     // Phase 2: ACTION — submit with experience_id, expect APPROVED
     const resp2 = await postGraphqlBloks(
       this.client,
-      this.headers(),
+      this.nuxHeaders(),
       "com.bloks.www.privacy.consent.prompt.action",
       {},
       {
@@ -1310,7 +1362,7 @@ export class InstagramRegistration {
         INTERNAL__latency_qpl_instance_id: this.qplInstanceId,
         _w_s228763: "",
         source: "source",
-        experience_id: experienceId,
+        experience_id: this.experienceId,
       },
     )
     this.updateState(resp2)
