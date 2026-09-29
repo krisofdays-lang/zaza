@@ -246,7 +246,7 @@ export class InstagramRegistration {
       `BKCdsScreenViewController:com.bloks.www.bloks.caa.reg.tos:9::${ts}:::${ts},` +
       `BKCdsScreenViewController:com.bloks.www.bloks.caa.reg.profilephoto:10::${ts}:::${ts}`
     if (includeTransition) {
-      chain += `,com.bloks.www.bloks.caa.reg.transition:11::${ts}:::${ts}`
+      chain += `,com.bloks.www.bloks.caa.reg.transition:com.bloks.www.bloks.caa.reg.transition:11::${ts}:::${ts}`
     }
     return chain
   }
@@ -598,7 +598,6 @@ export class InstagramRegistration {
       ["challenge_required", "challenge required"],
       ["account_disabled", "account disabled"],
       ['is_disabled":true', "account disabled"],
-      ["account_suspended", "account suspended"],
     ]
     for (const [needle, reason] of markers) {
       if (low.includes(needle)) return reason
@@ -1206,11 +1205,9 @@ export class InstagramRegistration {
       this.igUserId = this.dsUserId
     }
 
-    // Extract family uid (created_fb_uid) — used in NUX transition user_id
-    for (const text of [raw, unescaped]) {
-      const m = /"(?:created_fb_uid|fbuid|family_user_id)"\s*:\s*"?(\d+)"?/.exec(text)
-      if (m) { this.createdFbUid = m[1]; break }
-    }
+    // Extract family uid (created_fb_uid) — bloks action format: "uid" "17841..."
+    const mUid = /"uid"\s+"(\d{6,})"/.exec(raw) || /\\"uid\\"\s*:\s*\\?"?(\d{6,})/.exec(raw)
+    if (mUid) this.createdFbUid = mUid[1]
 
     // Check for signs of success (like reference: ds_user_id, sessionid, account_created in body)
     const hasSuccessIndicator = raw.includes("ds_user_id") ||
@@ -1243,7 +1240,7 @@ export class InstagramRegistration {
     const resp = await postGraphqlBloks(
       this.client,
       this.nuxHeaders({
-        clientEndpoint: "com.bloks.www.bloks.caa.reg.profilephoto",
+        clientEndpoint: "BKCdsScreenViewController:com.bloks.www.bloks.caa.reg.profilephoto",
         navChain: this.nuxNavChain(),
       }),
       "com.bloks.www.bloks.caa.registration.profile.async",
@@ -1287,8 +1284,8 @@ export class InstagramRegistration {
     const resp = await postGraphqlBloks(
       this.client,
       this.nuxHeaders({
-        clientEndpoint: "com.bloks.www.bloks.caa.reg.transition",
-        navChain: this.nuxNavChain(false),
+        clientEndpoint: "com.bloks.www.bloks.caa.reg.transition:com.bloks.www.bloks.caa.reg.transition",
+        navChain: this.nuxNavChain(true),
       }),
       "com.bloks.www.bloks.caa.reg.transition.async",
       {},
@@ -1317,10 +1314,16 @@ export class InstagramRegistration {
   private async nuxPrivacyConsent(): Promise<void> {
     this.onStep("nux_privacy", "Completing NUX: privacy consent")
 
+    const consentNav = this.nuxNavChain(true)
+    const consentEndpoint = "com.bloks.www.bloks.caa.reg.transition:com.bloks.www.bloks.caa.reg.transition"
+
     // Phase 1: PROMPT — get experience_id
     const resp1 = await postGraphqlBloks(
       this.client,
-      this.nuxHeaders(),
+      this.nuxHeaders({
+        clientEndpoint: consentEndpoint,
+        navChain: consentNav,
+      }),
       "com.bloks.www.privacy.consent.prompt.action",
       {},
       {
@@ -1353,7 +1356,10 @@ export class InstagramRegistration {
     // Phase 2: ACTION — submit with experience_id, expect APPROVED
     const resp2 = await postGraphqlBloks(
       this.client,
-      this.nuxHeaders(),
+      this.nuxHeaders({
+        clientEndpoint: consentEndpoint,
+        navChain: consentNav,
+      }),
       "com.bloks.www.privacy.consent.prompt.action",
       {},
       {
