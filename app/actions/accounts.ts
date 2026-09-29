@@ -121,6 +121,7 @@ export async function getAccountStatuses() {
       recentReelViews: igAccounts.recentReelViews,
       lastError: igAccounts.lastError,
       lastCheckedAt: igAccounts.lastCheckedAt,
+      lastPostAt: igAccounts.lastPostAt,
     })
     .from(igAccounts)
     .where(eq(igAccounts.userId, userId))
@@ -245,24 +246,40 @@ export async function createAccount(input: {
       if (user) {
         const resolvedId = user.pk != null ? String(user.pk) : row.igUserId
         const reelViews = await recentReelViewsSafe(client, resolvedId || client.uid)
+        const patch: Record<string, unknown> = {
+          profile: user,
+          username: (user.username as string) || row.username,
+          igUserId: resolvedId,
+          recentReelViews: reelViews,
+          status: "ok",
+          lastCheckedAt: new Date(),
+          lastError: "",
+        }
+        if (user.latest_reel_media) {
+          patch.lastPostAt = new Date(Number(user.latest_reel_media) * 1000)
+        }
         await db
           .update(igAccounts)
-          .set({
-            profile: user,
-            username: (user.username as string) || row.username,
-            igUserId: resolvedId,
-            recentReelViews: reelViews,
-            status: "ok",
-            lastCheckedAt: new Date(),
-            lastError: "",
-          })
+          .set(patch)
+          .where(eq(igAccounts.id, row.id))
+      } else {
+        await db
+          .update(igAccounts)
+          .set({ status: "error", lastCheckedAt: new Date(), lastError: "Profile fetch failed" })
           .where(eq(igAccounts.id, row.id))
       }
       // Invalidate cache so the next client poll picks up the fresh profile/avatar.
       revalidatePath("/")
       revalidatePath("/dashboard")
-    } catch {
-      // ignore — the account is added; the profile can be refreshed later.
+    } catch (e) {
+      console.error(`[createAccount] after() failed for account ${row.id}:`, e)
+      await db
+        .update(igAccounts)
+        .set({ status: "error", lastCheckedAt: new Date(), lastError: "Profile check failed" })
+        .where(eq(igAccounts.id, row.id))
+        .catch(() => {})
+      revalidatePath("/")
+      revalidatePath("/dashboard")
     }
   })
 
@@ -701,17 +718,21 @@ export async function refreshAccountProfile(accountId: number) {
       if (user) {
         const resolvedId = user.pk != null ? String(user.pk) : account.igUserId
         const reelViews = await recentReelViewsSafe(client, resolvedId || client.uid)
+        const patch: Record<string, unknown> = {
+          status: "ok",
+          lastCheckedAt: new Date(),
+          lastError: "",
+          profile: user,
+          username: (user.username as string) || account.username,
+          igUserId: resolvedId,
+          recentReelViews: reelViews,
+        }
+        if (user.latest_reel_media) {
+          patch.lastPostAt = new Date(Number(user.latest_reel_media) * 1000)
+        }
         await db
           .update(igAccounts)
-          .set({
-            status: "ok",
-            lastCheckedAt: new Date(),
-            lastError: "",
-            profile: user,
-            username: (user.username as string) || account.username,
-            igUserId: resolvedId,
-            recentReelViews: reelViews,
-          })
+          .set(patch)
           .where(eq(igAccounts.id, accountId))
       } else {
         const classified = classifyResponse(res.status, res.data)

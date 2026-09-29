@@ -189,7 +189,7 @@ export function AccountsTable({
     return accounts.map((a) => {
       const s = statusOverrides.get(a.id)
       if (!s) return a
-      return { ...a, status: s.status, username: s.username, profile: s.profile, recentReelViews: s.recentReelViews, lastError: s.lastError, lastCheckedAt: s.lastCheckedAt }
+      return { ...a, status: s.status, username: s.username, profile: s.profile, recentReelViews: s.recentReelViews, lastError: s.lastError, lastCheckedAt: s.lastCheckedAt, lastPostAt: s.lastPostAt }
     })
   }, [accounts, statusOverrides])
 
