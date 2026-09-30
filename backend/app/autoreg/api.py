@@ -170,6 +170,31 @@ def _run_registration(req: AutoregRequest) -> AutoregResult:
                 steps=steps,
             )
 
+        if not reg.nux_consent_approved:
+            log_step("nux_not_approved", "NUX consent was not approved")
+            return AutoregResult(
+                success=False,
+                error="NUX consent not approved",
+                username=reg.username,
+                email=reg.email,
+                phone=reg.phone or "",
+                bearer=reg.bearer or "",
+                mid=reg.mid or "",
+                steps=steps,
+            )
+
+        if not reg.bearer:
+            log_step("no_bearer", "Bearer token is empty after registration")
+            return AutoregResult(
+                success=False,
+                error="Bearer token missing after registration",
+                username=reg.username,
+                email=reg.email,
+                phone=reg.phone or "",
+                mid=reg.mid or "",
+                steps=steps,
+            )
+
         # Build the account record using the same logic as the standalone script
         # We need the last response for build_account_record, but reg.run()
         # doesn't return it. Instead, extract tokens directly from reg object.

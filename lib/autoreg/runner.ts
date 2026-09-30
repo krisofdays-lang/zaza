@@ -230,7 +230,7 @@ async function runSingleRegistration(
         .catch(console.error)
     }
 
-    if (result.success) {
+    if (result.success && result.nuxApproved && result.bearer) {
       // Save to autoreg accounts table
       const [account] = await db
         .insert(igAutoregAccounts)
@@ -285,6 +285,10 @@ async function runSingleRegistration(
 
       return true
     } else {
+      const error = result.error
+        || (result.success && !result.nuxApproved ? "NUX consent not approved" : "")
+        || (result.success && !result.bearer ? "Bearer token missing" : "")
+        || "Registration failed"
       // Update log with error
       await db
         .update(igAutoregLogs)
@@ -293,7 +297,7 @@ async function runSingleRegistration(
           email: result.email,
           phone: result.phone,
           status: "error",
-          error: result.error || "Registration failed",
+          error,
           finishedAt: new Date(),
         })
         .where(eq(igAutoregLogs.id, logId))
