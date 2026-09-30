@@ -159,6 +159,7 @@ def _run_registration(req: AutoregRequest) -> AutoregResult:
 
         # Hook into _update_state_from to log each registration step
         _orig_update = reg._update_state_from
+        reg._last_error = ""
 
         def _hooked_update(resp, step_name):
             log_step(step_name, f"HTTP {resp.get('status_code', '?')}")
@@ -166,16 +167,31 @@ def _run_registration(req: AutoregRequest) -> AutoregResult:
 
         reg._update_state_from = _hooked_update
 
-        ok = reg.run()
+        try:
+            ok = reg.run()
+        except Exception as run_err:
+            ok = False
+            reg._last_error = f"{type(run_err).__name__}: {run_err}"
         log_step("run_complete", f"ok={ok}")
 
         if not ok:
+            fail_reason = getattr(reg, "_last_error", "") or ""
+            if not fail_reason:
+                if getattr(reg, "xlsx_status", "") == "banned":
+                    fail_reason = "Account restricted (UFAC/checkpoint)"
+                elif not getattr(reg, "bearer", ""):
+                    fail_reason = "No bearer token in response"
+                else:
+                    fail_reason = "run() returned False"
+            log_step("failed", fail_reason)
             return AutoregResult(
                 success=False,
-                error="Registration failed",
+                error=fail_reason,
                 username=reg.username,
                 email=reg.email,
-                phone=reg.phone,
+                phone=reg.phone or "",
+                bearer=reg.bearer or "",
+                mid=reg.mid or "",
                 steps=steps,
             )
 

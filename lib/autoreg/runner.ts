@@ -298,7 +298,7 @@ async function runSingleRegistration(
       const error = result.error
         || (result.success && !result.nuxApproved ? "NUX consent not approved" : "")
         || (result.success && !result.bearer ? "Bearer token missing" : "")
-        || "Registration failed"
+        || "Unknown error"
       // Build a step trace so the user sees what happened
       const stepsTrace = result.steps?.length
         ? result.steps.map((s) => `${s.step}: ${s.detail}`).join(" → ")
