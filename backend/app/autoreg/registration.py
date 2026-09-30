@@ -48,12 +48,12 @@ INSTAGRAM_HOST = "https://i.instagram.com"
 # UA рассинхронится с bloks_versioning_id. А вот МОДЕЛЬ iPhone и версия iOS —
 # это железо/ОС, они НЕ зависят от сборки приложения, поэтому их можно
 # рандомизировать между аккаунтами (в пределах реально поддерживаемых версий).
-PINNED_IG_VERSION = "447.0.0.34.80"     # полная версия (для UA)
-PINNED_IG_VERSION_SHORT = "447"         # app.ig_version в записи аккаунта
-PINNED_APP_VERSION = "447.0.0"          # app.app_version в записи аккаунта
-PINNED_IG_BUILD = "1065993616"          # build-номер, привязан к версии IG
+PINNED_IG_VERSION = "448.0.0.39.66"     # полная версия (для UA)
+PINNED_IG_VERSION_SHORT = "448"         # app.ig_version в записи аккаунта
+PINNED_APP_VERSION = "448.0.0"          # app.app_version в записи аккаунта
+PINNED_IG_BUILD = "1072661960"          # build-номер, привязан к версии IG
 PINNED_BLOKS_VERSION_ID = (
-    "a75059d9df38435b9cab548e5a35832772a867678479ce3d0fb5ec9e8bbf3884"
+    "962e8adcff14724d83afff88f2db8ff321b1d3cf53fee9b37a9fcaa1eb9a0306"
 )
 PINNED_IG_APP_ID = "124024574287414"
 PINNED_IG_CAPABILITIES = "36r/F/8="
