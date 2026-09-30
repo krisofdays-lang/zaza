@@ -116,9 +116,22 @@ export interface PyAutoregResult {
   steps: { step: string; detail: string; ts: number }[]
 }
 
+const EMPTY_AUTOREG_RESULT: PyAutoregResult = {
+  success: false, error: "", nuxApproved: false,
+  username: "", password: "", email: "", phone: "",
+  bearer: "", mid: "", claim: "", dsUserId: "", csrf: "", rur: "",
+  deviceId: "", familyDeviceId: "", phoneId: "", pigeonSession: "",
+  fbAnonId: "", waterfallId: "", machineId: "", cloudTrustToken: "",
+  aacJid: "", aacCs: "",
+  iphoneModel: "", iosVersion: "", appVersion: "",
+  locale: "", timezone: "", userAgent: "",
+  sessionBlob: {}, steps: [],
+}
+
 export async function registerViaPython(
   config: PyAutoregConfig,
   signal?: AbortSignal,
+  onStep?: (step: string, detail: string) => void,
 ): Promise<PyAutoregResult> {
   const res = await fetch(serviceUrl("/autoreg/register"), {
     method: "POST",
@@ -129,22 +142,49 @@ export async function registerViaPython(
 
   if (!res.ok && res.status >= 500) {
     const text = await res.text().catch(() => "")
-    return {
-      success: false,
-      error: `ig_service_${res.status}: ${text.slice(0, 200)}`,
-      nuxApproved: false,
-      username: "", password: "", email: "", phone: "",
-      bearer: "", mid: "", claim: "", dsUserId: "", csrf: "", rur: "",
-      deviceId: "", familyDeviceId: "", phoneId: "", pigeonSession: "",
-      fbAnonId: "", waterfallId: "", machineId: "", cloudTrustToken: "",
-      aacJid: "", aacCs: "",
-      iphoneModel: "", iosVersion: "", appVersion: "",
-      locale: "", timezone: "", userAgent: "",
-      sessionBlob: {},
-      steps: [],
+    return { ...EMPTY_AUTOREG_RESULT, error: `ig_service_${res.status}: ${text.slice(0, 200)}` }
+  }
+
+  if (!res.body) {
+    return (await res.json()) as PyAutoregResult
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+  let result: PyAutoregResult | null = null
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    const lines = buffer.split("\n")
+    buffer = lines.pop() || ""
+
+    for (const line of lines) {
+      if (!line.trim()) continue
+      try {
+        const parsed = JSON.parse(line)
+        if (parsed.type === "step" && onStep) {
+          onStep(parsed.step, parsed.detail || "")
+        } else if (parsed.type === "result") {
+          result = parsed.data as PyAutoregResult
+        }
+      } catch {}
     }
   }
-  return (await res.json()) as PyAutoregResult
+
+  if (buffer.trim()) {
+    try {
+      const parsed = JSON.parse(buffer)
+      if (parsed.type === "result") {
+        result = parsed.data as PyAutoregResult
+      }
+    } catch {}
+  }
+
+  return result ?? { ...EMPTY_AUTOREG_RESULT, error: "No result received from registration stream" }
 }
 
 // ── Reel publishing ─────────────────────────────────────────────────────

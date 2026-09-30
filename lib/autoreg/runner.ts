@@ -213,19 +213,12 @@ async function runSingleRegistration(
       .set({ step: "registering", stepDetail: "" })
       .where(eq(igAutoregLogs.id, logId))
 
-    const result = await registerViaPython(pyConfig, signal)
-
-    // Update log with the last step from the Python service
-    const lastStep = result.steps?.length
-      ? result.steps[result.steps.length - 1]
-      : null
-    if (lastStep) {
-      await db
-        .update(igAutoregLogs)
-        .set({ step: lastStep.step, stepDetail: lastStep.detail || "" })
+    const result = await registerViaPython(pyConfig, signal, (step, detail) => {
+      db.update(igAutoregLogs)
+        .set({ step, stepDetail: detail })
         .where(eq(igAutoregLogs.id, logId))
         .catch(console.error)
-    }
+    })
 
     if (result.success && result.nuxApproved && result.bearer) {
       // Save to autoreg accounts table
@@ -290,6 +283,7 @@ async function runSingleRegistration(
       const stepsTrace = result.steps?.length
         ? result.steps.map((s) => `${s.step}: ${s.detail}`).join(" → ")
         : ""
+      const lastStep = result.steps?.length ? result.steps[result.steps.length - 1] : null
       const errorStep = lastStep?.step || "run_complete"
       const errorDetail = stepsTrace
         ? `${stepsTrace} → ${error}`

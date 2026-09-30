@@ -8,12 +8,14 @@ because the registration flow uses requests.Session with time.sleep delays.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 import traceback
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 log = logging.getLogger("ig.autoreg")
@@ -96,8 +98,11 @@ class AutoregResult(BaseModel):
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
-def _run_registration(req: AutoregRequest) -> AutoregResult:
-    """Run one registration synchronously (called via asyncio.to_thread)."""
+def _run_registration(
+    req: AutoregRequest,
+    on_step: Callable[[str, str], None] | None = None,
+) -> AutoregResult:
+    """Run one registration synchronously (called from a thread)."""
     from .registration import InstagramRegistration
     from .identity import random_name, random_birthday, generate_unique_username
     from .anymessage_client import AnyMessageClient
@@ -109,6 +114,8 @@ def _run_registration(req: AutoregRequest) -> AutoregResult:
     def log_step(step: str, detail: str = ""):
         steps.append({"step": step, "detail": detail, "ts": time.time()})
         log.info("[autoreg] %s: %s", step, detail)
+        if on_step:
+            on_step(step, detail)
 
     try:
         first_name, last_name = random_name()
@@ -311,10 +318,42 @@ def _run_registration(req: AutoregRequest) -> AutoregResult:
 
 # ── Route ────────────────────────────────────────────────────────────────
 
-@router.post("/register", response_model=AutoregResult)
-async def register(req: AutoregRequest) -> AutoregResult:
-    """Run one Instagram registration. Blocking work runs in a thread."""
-    return await asyncio.to_thread(_run_registration, req)
+@router.post("/register")
+async def register(req: AutoregRequest):
+    """Run one Instagram registration, streaming steps as NDJSON."""
+    step_queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def on_step(step: str, detail: str):
+        loop.call_soon_threadsafe(
+            step_queue.put_nowait,
+            {"type": "step", "step": step, "detail": detail},
+        )
+
+    def run():
+        try:
+            result = _run_registration(req, on_step=on_step)
+            loop.call_soon_threadsafe(
+                step_queue.put_nowait,
+                {"type": "result", "data": result.model_dump(by_alias=True)},
+            )
+        except Exception as e:
+            err = AutoregResult(success=False, error=f"{type(e).__name__}: {e}")
+            loop.call_soon_threadsafe(
+                step_queue.put_nowait,
+                {"type": "result", "data": err.model_dump(by_alias=True)},
+            )
+
+    loop.run_in_executor(None, run)
+
+    async def generate():
+        while True:
+            item = await step_queue.get()
+            yield json.dumps(item) + "\n"
+            if item.get("type") == "result":
+                break
+
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 
 @router.get("/health")
