@@ -510,8 +510,8 @@ export function AutoregView({
                       <td className={cn(
                         "px-3 py-2 text-xs truncate max-w-[300px]",
                         log.status === "error" ? "text-red-400" : "text-emerald-400/70",
-                      )} title={log.status === "error" ? log.error : log.stepDetail}>
-                        {log.status === "error" ? (log.error || "—") : (log.stepDetail || "—")}
+                      )} title={log.stepDetail || log.error || ""}>
+                        {log.stepDetail || log.error || "—"}
                       </td>
                       <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
                         {log.startedAt ? new Date(log.startedAt).toLocaleTimeString() : "—"}

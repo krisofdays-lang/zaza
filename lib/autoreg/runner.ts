@@ -299,9 +299,14 @@ async function runSingleRegistration(
         || (result.success && !result.nuxApproved ? "NUX consent not approved" : "")
         || (result.success && !result.bearer ? "Bearer token missing" : "")
         || "Registration failed"
-      // Use the last step from Python for detail, fall back to error text
+      // Build a step trace so the user sees what happened
+      const stepsTrace = result.steps?.length
+        ? result.steps.map((s) => `${s.step}: ${s.detail}`).join(" → ")
+        : ""
       const errorStep = lastStep?.step || "run_complete"
-      const errorDetail = lastStep?.detail || error
+      const errorDetail = stepsTrace
+        ? `${stepsTrace} → ${error}`
+        : error
       await db
         .update(igAutoregLogs)
         .set({
