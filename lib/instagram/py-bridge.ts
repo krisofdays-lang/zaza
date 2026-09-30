@@ -116,11 +116,15 @@ export interface PyAutoregResult {
   steps: { step: string; detail: string; ts: number }[]
 }
 
-export async function registerViaPython(config: PyAutoregConfig): Promise<PyAutoregResult> {
+export async function registerViaPython(
+  config: PyAutoregConfig,
+  signal?: AbortSignal,
+): Promise<PyAutoregResult> {
   const res = await fetch(serviceUrl("/autoreg/register"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(config),
+    signal,
   })
 
   if (!res.ok && res.status >= 500) {

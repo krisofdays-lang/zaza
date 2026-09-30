@@ -47,11 +47,15 @@ export async function startAutoregJob(config: AutoregJobConfig): Promise<string>
   })
 
   let cancelled = false
-  const cancelFn = () => { cancelled = true }
+  const abortController = new AbortController()
+  const cancelFn = () => {
+    cancelled = true
+    abortController.abort()
+  }
   currentJob = { jobId, cancel: cancelFn }
 
   // Run in background (fire and forget)
-  runJob(jobId, config, () => cancelled).catch(console.error).finally(() => {
+  runJob(jobId, config, () => cancelled, abortController.signal).catch(console.error).finally(() => {
     if (currentJob?.jobId === jobId) currentJob = null
   })
 
@@ -75,6 +79,7 @@ async function runJob(
   jobId: string,
   config: AutoregJobConfig,
   isCancelled: () => boolean,
+  signal: AbortSignal,
 ) {
   let completed = 0
   let failed = 0
@@ -98,7 +103,7 @@ async function runJob(
       const promises: Promise<void>[] = []
 
       for (let i = 0; i < batchSize; i++) {
-        if (isCancelled()) break
+        if (isCancelled() || signal.aborted) break
         const threadIdx = completed + failed + i
         const proxy = config.proxies[proxyIdx % config.proxies.length]
         proxyIdx++
@@ -107,11 +112,12 @@ async function runJob(
           const stagger = 1500 + Math.random() * 3000
           const chunk = 200
           let waited = 0
-          while (waited < stagger && !isCancelled()) {
+          while (waited < stagger && !isCancelled() && !signal.aborted) {
             await new Promise((r) => setTimeout(r, Math.min(chunk, stagger - waited)))
             waited += chunk
           }
-          if (isCancelled()) break
+          if (isCancelled() || signal.aborted) break
+          if (await checkCancelRequested(jobId)) break
         }
 
         promises.push(
@@ -127,6 +133,7 @@ async function runJob(
             },
             config.groupLabel || "",
             isCancelled,
+            signal,
           ).then((success) => {
             if (success) completed++
             else failed++
@@ -187,6 +194,7 @@ async function runSingleRegistration(
   pyConfig: PyAutoregConfig,
   groupLabel: string,
   isCancelled: () => boolean,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   // Create log entry
   const [logRow] = await db
@@ -204,7 +212,7 @@ async function runSingleRegistration(
   const logId = logRow.id
 
   // Check cancellation before starting
-  if (isCancelled()) {
+  if (isCancelled() || signal?.aborted) {
     await db
       .update(igAutoregLogs)
       .set({ status: "cancelled", finishedAt: new Date() })
@@ -218,7 +226,7 @@ async function runSingleRegistration(
       .set({ step: "registering", stepDetail: "calling python service" })
       .where(eq(igAutoregLogs.id, logId))
 
-    const result = await registerViaPython(pyConfig)
+    const result = await registerViaPython(pyConfig, signal)
 
     // Update log with the last step from the Python service
     if (result.steps?.length) {
@@ -305,12 +313,12 @@ async function runSingleRegistration(
       return false
     }
   } catch (err) {
-    const msg = (err as Error).message
+    const isAbort = (err as Error).name === "AbortError"
     await db
       .update(igAutoregLogs)
       .set({
-        status: "error",
-        error: msg,
+        status: isAbort ? "cancelled" : "error",
+        error: isAbort ? "Cancelled" : (err as Error).message,
         finishedAt: new Date(),
       })
       .where(eq(igAutoregLogs.id, logId))

@@ -64,6 +64,32 @@ export function AutoregView({
   const [textverifiedToken, setTextverifiedToken] = useState("")
   const [groupLabel, setGroupLabel] = useState("")
 
+  // Load saved API keys from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("autoreg_settings")
+      if (saved) {
+        const s = JSON.parse(saved)
+        if (s.anymessageKey) setAnymessageKey(s.anymessageKey)
+        if (s.anymessageDomain) setAnymessageDomain(s.anymessageDomain)
+        if (s.textverifiedToken) setTextverifiedToken(s.textverifiedToken)
+      }
+    } catch {}
+  }, [])
+
+  const handleSaveKeys = useCallback(() => {
+    try {
+      localStorage.setItem("autoreg_settings", JSON.stringify({
+        anymessageKey,
+        anymessageDomain,
+        textverifiedToken,
+      }))
+      toast.success("API keys saved")
+    } catch {
+      toast.error("Failed to save keys")
+    }
+  }, [anymessageKey, anymessageDomain, textverifiedToken])
+
   // ── Transfer state ───────────────────────────────────────────────────
   const [transferUserId, setTransferUserId] = useState<number | null>(platformUsers[0]?.id ?? null)
   const [selectedAccounts, setSelectedAccounts] = useState<Set<number>>(new Set())
@@ -282,13 +308,22 @@ export function AutoregView({
                     <label className="block text-xs font-medium text-muted-foreground mb-1.5">
                       AnyMessage API Key
                     </label>
-                    <input
-                      type="password"
-                      value={anymessageKey}
-                      onChange={(e) => setAnymessageKey(e.target.value)}
-                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      placeholder="Enter API key…"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={anymessageKey}
+                        onChange={(e) => setAnymessageKey(e.target.value)}
+                        className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        placeholder="Enter API key…"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveKeys}
+                        className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 transition-all"
+                      >
+                        Save
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-muted-foreground mb-1.5">
@@ -319,13 +354,22 @@ export function AutoregView({
                   <label className="block text-xs font-medium text-muted-foreground mb-1.5">
                     TextVerified Bearer Token
                   </label>
-                  <input
-                    type="password"
-                    value={textverifiedToken}
-                    onChange={(e) => setTextverifiedToken(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    placeholder="Enter bearer token…"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={textverifiedToken}
+                      onChange={(e) => setTextverifiedToken(e.target.value)}
+                      className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      placeholder="Enter bearer token…"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveKeys}
+                      className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 transition-all"
+                    >
+                      Save
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
