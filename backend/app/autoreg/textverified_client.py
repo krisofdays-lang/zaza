@@ -20,10 +20,6 @@ import re
 import time
 from typing import Optional
 from datetime import datetime, timedelta
-from textverified import (
-    TextVerified,
-    ReservationCapability
-)
 
 
 class TextverifiedClient:
@@ -60,8 +56,9 @@ class TextverifiedClient:
         self.service_name = service_name
         self.timeout = timeout
 
-        # Инициализируем Textverified клиент
+        # Инициализируем Textverified клиент (lazy import)
         try:
+            from textverified import TextVerified
             self.client = TextVerified(
                 api_key=api_key,
                 api_username=api_username,
@@ -92,7 +89,7 @@ class TextverifiedClient:
         service = service_name or self.service_name
 
         try:
-            # Создаём верификацию через официальный API
+            from textverified import ReservationCapability
             self.verification = self.client.verifications.create(
                 service_name=service,
                 capability=ReservationCapability.SMS,

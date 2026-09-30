@@ -1,4 +1,3 @@
-import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Toaster } from '@/components/ui/sonner'
@@ -13,7 +12,6 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'Orbit — Instagram Account Control',
   description: 'Manage Instagram accounts, groups and automation workflows.',
-  generator: 'v0.app',
   icons: {
     icon: [
       {
@@ -48,7 +46,6 @@ export default function RootLayout({
       <body className="font-sans antialiased bg-background text-foreground">
         {children}
         <Toaster position="top-right" richColors />
-        {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
   )

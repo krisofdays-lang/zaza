@@ -145,5 +145,4 @@ PostgreSQL server.
 Uploaded media is stored on the local filesystem under `MEDIA_ROOT`
 (`/data/media` in Docker), partitioned per user, and served through an
 authenticated route (`/api/media/...`) that checks the session. Nothing leaves
-your server. Legacy files that were previously stored on Vercel Blob still load
-via their absolute URLs, so no migration of old uploads is required.
+your server.

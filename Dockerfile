@@ -69,7 +69,7 @@ RUN apk add --no-cache python3 py3-pip ffmpeg
 ENV IG_PY_VENV=/opt/ig-backend-venv
 COPY backend/requirements.txt /tmp/ig-requirements.txt
 RUN python3 -m venv "$IG_PY_VENV" \
-  && "$IG_PY_VENV/bin/pip" install --no-cache-dir -r /tmp/ig-requirements.txt
+  && "$IG_PY_VENV/bin/pip" install --no-cache-dir --pre -r /tmp/ig-requirements.txt
 
 # Run as a non-root user.
 RUN addgroup --system --gid 1001 nodejs \

@@ -4,10 +4,8 @@ The Next.js server calls these endpoints instead of running the TypeScript
 Instagram client in-process. All Instagram traffic still egresses through the Go
 uTLS sidecar (TLS_PROXY_URL) so the JA4/HTTP2 fingerprint stays iPhone-shaped.
 
-Routes are defined WITHOUT the /api prefix on purpose: when deployed behind
-Vercel experimentalServices the routePrefix is stripped before forwarding, and
-the Next.js dev proxy rewrites /api/ig/* -> this service. See vercel.json /
-next.config.mjs.
+Routes are defined WITHOUT the /api prefix: the Docker entrypoint launches
+uvicorn on loopback and the Next.js server proxies /api/ig/* to it.
 """
 
 from __future__ import annotations
