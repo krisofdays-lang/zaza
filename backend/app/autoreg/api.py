@@ -157,6 +157,15 @@ def _run_registration(req: AutoregRequest) -> AutoregResult:
             code_poll_interval=req.code_poll_interval,
         )
 
+        # Hook into _update_state_from to log each registration step
+        _orig_update = reg._update_state_from
+
+        def _hooked_update(resp, step_name):
+            log_step(step_name, f"HTTP {resp.get('status_code', '?')}")
+            return _orig_update(resp, step_name)
+
+        reg._update_state_from = _hooked_update
+
         ok = reg.run()
         log_step("run_complete", f"ok={ok}")
 

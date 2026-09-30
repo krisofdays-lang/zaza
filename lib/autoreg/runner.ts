@@ -223,14 +223,16 @@ async function runSingleRegistration(
   try {
     await db
       .update(igAutoregLogs)
-      .set({ step: "registering", stepDetail: "calling python service" })
+      .set({ step: "registering", stepDetail: "" })
       .where(eq(igAutoregLogs.id, logId))
 
     const result = await registerViaPython(pyConfig, signal)
 
     // Update log with the last step from the Python service
-    if (result.steps?.length) {
-      const lastStep = result.steps[result.steps.length - 1]
+    const lastStep = result.steps?.length
+      ? result.steps[result.steps.length - 1]
+      : null
+    if (lastStep) {
       await db
         .update(igAutoregLogs)
         .set({ step: lastStep.step, stepDetail: lastStep.detail || "" })
@@ -297,13 +299,17 @@ async function runSingleRegistration(
         || (result.success && !result.nuxApproved ? "NUX consent not approved" : "")
         || (result.success && !result.bearer ? "Bearer token missing" : "")
         || "Registration failed"
-      // Update log with error
+      // Use the last step from Python for detail, fall back to error text
+      const errorStep = lastStep?.step || "run_complete"
+      const errorDetail = lastStep?.detail || error
       await db
         .update(igAutoregLogs)
         .set({
           username: result.username,
           email: result.email,
           phone: result.phone,
+          step: errorStep,
+          stepDetail: errorDetail,
           status: "error",
           error,
           finishedAt: new Date(),
