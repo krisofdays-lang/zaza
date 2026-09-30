@@ -11,7 +11,6 @@ import asyncio
 import json
 import logging
 import time
-import traceback
 from typing import Any, Callable, Optional
 
 from fastapi import APIRouter
@@ -209,7 +208,11 @@ def _run_registration(
 
         def _hooked_fetch_key():
             log_step("fetch_key", "Fetching password encryption key")
-            return _orig_fetch_key()
+            try:
+                return _orig_fetch_key()
+            except Exception as e:
+                log_step("fetch_key", f"ERROR: {type(e).__name__}: {e}")
+                raise
 
         reg._fetch_password_key = _hooked_fetch_key
 
@@ -218,7 +221,11 @@ def _run_registration(
 
         def _hooked_nux():
             log_step("nux", "Completing NUX onboarding")
-            result = _orig_nux()
+            try:
+                result = _orig_nux()
+            except Exception as e:
+                log_step("nux", f"ERROR: {type(e).__name__}: {e}")
+                raise
             if reg.nux_consent_approved:
                 log_step("nux_consent", "Consent APPROVED")
             return result
@@ -230,9 +237,45 @@ def _run_registration(
 
         def _hooked_warmup():
             log_step("warmup", "Running post-registration warmup")
-            return _orig_warmup()
+            try:
+                return _orig_warmup()
+            except Exception as e:
+                log_step("warmup", f"ERROR: {type(e).__name__}: {e}")
+                raise
 
         reg._warmup_login_flow = _hooked_warmup
+
+        # Wrap step methods to capture errors before run() swallows them.
+        # run() has a broad try/except that catches all exceptions and
+        # returns False, losing the actual error. These wrappers log the
+        # error to our step list before the exception propagates to run().
+        _captured_errors: list[str] = []
+
+        def _wrap_step(method, name):
+            def wrapper(*args, **kwargs):
+                try:
+                    return method(*args, **kwargs)
+                except Exception as e:
+                    err_msg = f"{type(e).__name__}: {e}"
+                    _captured_errors.append(f"{name}: {err_msg}")
+                    log_step(name, f"ERROR: {err_msg}")
+                    raise
+            return wrapper
+
+        for _attr in dir(reg):
+            if _attr.startswith("step") and callable(getattr(reg, _attr)):
+                setattr(reg, _attr, _wrap_step(getattr(reg, _attr), _attr))
+
+        # Also wrap mail/sms code retrieval (called from run via
+        # obtain_confirmation_code) — timeouts here are a common failure.
+        if reg.mail_client and hasattr(reg.mail_client, "wait_for_code"):
+            reg.mail_client.wait_for_code = _wrap_step(
+                reg.mail_client.wait_for_code, "wait_for_code"
+            )
+        if reg.sms_client and hasattr(reg.sms_client, "wait_for_code"):
+            reg.sms_client.wait_for_code = _wrap_step(
+                reg.sms_client.wait_for_code, "wait_for_code"
+            )
 
         try:
             ok = reg.run()
@@ -253,14 +296,46 @@ def _run_registration(
                     fail_reasons.append(f"{s['step']}: {detail}")
                 elif s["step"] == "exception":
                     fail_reasons.append(detail)
+
+            # Use captured step-method errors as fallback
+            if not fail_reasons and _captured_errors:
+                fail_reasons.extend(_captured_errors)
+
+            # State-based error detection: examine reg object to
+            # determine WHERE and WHY the registration failed.
             if not fail_reasons:
+                ig_steps = [
+                    s["step"] for s in steps
+                    if s["step"] not in (
+                        "init", "email_ordered", "sms_ordered",
+                        "fetch_key", "waiting_code", "create_debug",
+                    )
+                ]
+                last_ig = ig_steps[-1] if ig_steps else None
+
                 if getattr(reg, "xlsx_status", "") == "banned":
-                    fail_reasons.append("Account restricted (UFAC/checkpoint)")
+                    fail_reasons.append(
+                        f"Account restricted (UFAC/checkpoint) at '{last_ig}'"
+                    )
+                elif not last_ig:
+                    fail_reasons.append(
+                        "Crashed before any Instagram API call — "
+                        "check proxy connectivity"
+                    )
+                elif not getattr(reg, "ds_user_id", ""):
+                    fail_reasons.append(
+                        f"Account not created — failed after '{last_ig}'"
+                    )
                 elif not getattr(reg, "bearer", ""):
-                    fail_reasons.append("No bearer token after all steps completed")
+                    fail_reasons.append(
+                        f"No bearer token (uid={reg.ds_user_id}) — "
+                        f"account may be restricted"
+                    )
                 else:
-                    fail_reasons.append("Registration unsuccessful")
-            fail_reason = "; ".join(fail_reasons)
+                    fail_reasons.append(
+                        f"Registration failed after '{last_ig}'"
+                    )
+            fail_reason = "; ".join(fail_reasons[:3])
             log_step("failed", fail_reason)
             return AutoregResult(
                 success=False,
