@@ -171,18 +171,23 @@ def _run_registration(req: AutoregRequest) -> AutoregResult:
             ok = reg.run()
         except Exception as run_err:
             ok = False
-            reg._last_error = f"{type(run_err).__name__}: {run_err}"
-        log_step("run_complete", f"ok={ok}")
+            log_step("exception", f"{type(run_err).__name__}: {run_err}")
 
         if not ok:
-            fail_reason = getattr(reg, "_last_error", "") or ""
-            if not fail_reason:
+            # Find the actual failure: check for non-200 steps or the last step
+            fail_reasons = []
+            for s in steps:
+                detail = s.get("detail", "")
+                if detail and "HTTP" in detail and "200" not in detail:
+                    fail_reasons.append(f"{s['step']}: {detail}")
+            if not fail_reasons:
                 if getattr(reg, "xlsx_status", "") == "banned":
-                    fail_reason = "Account restricted (UFAC/checkpoint)"
+                    fail_reasons.append("Account restricted (UFAC/checkpoint)")
                 elif not getattr(reg, "bearer", ""):
-                    fail_reason = "No bearer token in response"
+                    fail_reasons.append("No bearer token after all steps completed")
                 else:
-                    fail_reason = "run() returned False"
+                    fail_reasons.append("Registration unsuccessful")
+            fail_reason = "; ".join(fail_reasons)
             log_step("failed", fail_reason)
             return AutoregResult(
                 success=False,
