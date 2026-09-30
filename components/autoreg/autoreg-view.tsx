@@ -29,6 +29,8 @@ import {
   deleteAutoregAccount,
   transferAutoregAccount,
   batchTransferAutoregAccounts,
+  saveAutoregSettings,
+  type AutoregSettings,
 } from "@/app/actions/autoreg"
 
 // ── Props ────────────────────────────────────────────────────────────────
@@ -38,6 +40,7 @@ interface AutoregViewProps {
   initialJob: IgAutoregJob | null
   initialLogs: IgAutoregLog[]
   platformUsers: { id: number; label: string; licenseKey: string }[]
+  savedSettings: AutoregSettings
 }
 
 // ── Main Component ───────────────────────────────────────────────────────
@@ -47,6 +50,7 @@ export function AutoregView({
   initialJob,
   initialLogs,
   platformUsers,
+  savedSettings,
 }: AutoregViewProps) {
   const [tab, setTab] = useState<"config" | "logs" | "accounts">("config")
   const [job, setJob] = useState<IgAutoregJob | null>(initialJob)
@@ -59,35 +63,21 @@ export function AutoregView({
   const [threads, setThreads] = useState(4)
   const [targetCount, setTargetCount] = useState(5)
   const [proxiesText, setProxiesText] = useState("")
-  const [anymessageKey, setAnymessageKey] = useState("")
-  const [anymessageDomain, setAnymessageDomain] = useState<string>("gmail")
-  const [textverifiedToken, setTextverifiedToken] = useState("")
+  const [anymessageKey, setAnymessageKey] = useState(savedSettings.anymessageKey || "")
+  const [anymessageDomain, setAnymessageDomain] = useState<string>(savedSettings.anymessageDomain || "gmail")
+  const [textverifiedToken, setTextverifiedToken] = useState(savedSettings.textverifiedToken || "")
   const [groupLabel, setGroupLabel] = useState("")
 
-  // Load saved API keys from localStorage on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("autoreg_settings")
-      if (saved) {
-        const s = JSON.parse(saved)
-        if (s.anymessageKey) setAnymessageKey(s.anymessageKey)
-        if (s.anymessageDomain) setAnymessageDomain(s.anymessageDomain)
-        if (s.textverifiedToken) setTextverifiedToken(s.textverifiedToken)
-      }
-    } catch {}
-  }, [])
-
   const handleSaveKeys = useCallback(() => {
-    try {
-      localStorage.setItem("autoreg_settings", JSON.stringify({
+    startTransition(async () => {
+      const res = await saveAutoregSettings({
         anymessageKey,
         anymessageDomain,
         textverifiedToken,
-      }))
-      toast.success("API keys saved")
-    } catch {
-      toast.error("Failed to save keys")
-    }
+      })
+      if (res.ok) toast.success("API keys saved")
+      else toast.error("Failed to save keys")
+    })
   }, [anymessageKey, anymessageDomain, textverifiedToken])
 
   // ── Transfer state ───────────────────────────────────────────────────

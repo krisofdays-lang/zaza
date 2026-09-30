@@ -8,6 +8,7 @@ export const users = pgTable("users", {
   licenseKey: text("license_key").notNull().unique(),
   label: text("label").notNull().default(""),
   isAdmin: boolean("is_admin").notNull().default(false),
+  autoregSettings: jsonb("autoreg_settings"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 

@@ -354,6 +354,9 @@ async function main() {
   // Autoreg log step detail (progress info separate from error messages).
   await client.query(`ALTER TABLE ig_autoreg_logs ADD COLUMN IF NOT EXISTS step_detail text NOT NULL DEFAULT '';`)
 
+  // Per-user autoreg settings (API keys, domains, etc.).
+  await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS autoreg_settings jsonb;`)
+
     // Per-run concurrency (how many accounts run in parallel). Warm up and
     // publications store it on their job row; workflows store it on the Start
     // node inside the graph. Covers upgrades from before the setting existed.

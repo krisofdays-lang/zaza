@@ -7,6 +7,7 @@ import {
   getLatestAutoregJob,
   listAutoregLogs,
   listPlatformUsers,
+  loadAutoregSettings,
 } from "@/app/actions/autoreg"
 
 export const dynamic = "force-dynamic"
@@ -16,10 +17,11 @@ export default async function AutoregPage() {
   if (!user) redirect("/login")
   if (!user.isAdmin) redirect("/dashboard")
 
-  const [accounts, latestJob, platformUsers] = await Promise.all([
+  const [accounts, latestJob, platformUsers, savedSettings] = await Promise.all([
     listAutoregAccounts(),
     getLatestAutoregJob(),
     listPlatformUsers(),
+    loadAutoregSettings(),
   ])
 
   // Load logs for the latest job (if any)
@@ -36,6 +38,7 @@ export default async function AutoregPage() {
         initialJob={latestJob}
         initialLogs={logs}
         platformUsers={platformUsers}
+        savedSettings={savedSettings}
       />
     </div>
   )

@@ -265,3 +265,30 @@ export async function listPlatformUsers(): Promise<{ id: number; label: string; 
     licenseKey: u.licenseKey,
   }))
 }
+
+// ── Autoreg settings (API keys) ─────────────────────────────────────────
+
+export interface AutoregSettings {
+  anymessageKey?: string
+  anymessageDomain?: string
+  textverifiedToken?: string
+}
+
+export async function loadAutoregSettings(): Promise<AutoregSettings> {
+  const user = await requireAdmin()
+  const [row] = await db
+    .select({ autoregSettings: users.autoregSettings })
+    .from(users)
+    .where(eq(users.id, user.id))
+    .limit(1)
+  return (row?.autoregSettings as AutoregSettings) || {}
+}
+
+export async function saveAutoregSettings(settings: AutoregSettings): Promise<{ ok: boolean }> {
+  const user = await requireAdmin()
+  await db
+    .update(users)
+    .set({ autoregSettings: settings })
+    .where(eq(users.id, user.id))
+  return { ok: true }
+}
