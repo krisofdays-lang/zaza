@@ -164,15 +164,75 @@ def _run_registration(
             code_poll_interval=req.code_poll_interval,
         )
 
-        # Hook into _update_state_from to log each registration step
+        # Descriptive labels for each step (matches old TS onStep format)
+        _step_labels = {
+            "aymh": "Initiating registration flow",
+            "ntm": "Exposing NTM experiment",
+            "contactpoint_email": f"Setting email: {email}",
+            "contactpoint_phone": f"Setting phone: {phone}",
+            "contactpoint_phone_async": f"Submitting phone: {phone}",
+            "confirm_sms_dispatch": "Confirming SMS dispatch",
+            "send_confirmation_email": "Sending confirmation email",
+            "send_confirmation_sms": "Sending confirmation SMS",
+            "confirmation": "Verifying confirmation code",
+            "password": "Setting password",
+            "birthday": f"Setting birthday: {birthday}",
+            "name_ig_and_soap": f"Setting name: {first_name} {last_name}",
+            "username": f"Setting username: {username}",
+            "create.account": "Creating account",
+        }
+
+        # Hook _update_state_from for registration steps
         _orig_update = reg._update_state_from
-        reg._last_error = ""
 
         def _hooked_update(resp, step_name):
-            log_step(step_name, f"HTTP {resp.get('status_code', '?')}")
-            return _orig_update(resp, step_name)
+            status = resp.get("status_code", "?")
+            label = _step_labels.get(step_name, step_name)
+            try:
+                result = _orig_update(resp, step_name)
+            except Exception as e:
+                log_step(step_name, f"{label} — HTTP {status} — ERROR: {e}")
+                raise
+            log_step(step_name, f"{label} — HTTP {status}")
+            if step_name in ("send_confirmation_email", "send_confirmation_sms"):
+                log_step("waiting_code", "Waiting for verification code")
+            if step_name == "create.account":
+                bearer_ok = "YES" if reg.bearer else "NO"
+                ds = reg.ds_user_id or "NO"
+                log_step("create_debug", f"bearer={bearer_ok} | ds_user_id={ds}")
+            return result
 
         reg._update_state_from = _hooked_update
+
+        # Hook _fetch_password_key
+        _orig_fetch_key = reg._fetch_password_key
+
+        def _hooked_fetch_key():
+            log_step("fetch_key", "Fetching password encryption key")
+            return _orig_fetch_key()
+
+        reg._fetch_password_key = _hooked_fetch_key
+
+        # Hook _complete_registration_nux
+        _orig_nux = reg._complete_registration_nux
+
+        def _hooked_nux():
+            log_step("nux", "Completing NUX onboarding")
+            result = _orig_nux()
+            if reg.nux_consent_approved:
+                log_step("nux_consent", "Consent APPROVED")
+            return result
+
+        reg._complete_registration_nux = _hooked_nux
+
+        # Hook _warmup_login_flow
+        _orig_warmup = reg._warmup_login_flow
+
+        def _hooked_warmup():
+            log_step("warmup", "Running post-registration warmup")
+            return _orig_warmup()
+
+        reg._warmup_login_flow = _hooked_warmup
 
         try:
             ok = reg.run()
@@ -181,12 +241,18 @@ def _run_registration(
             log_step("exception", f"{type(run_err).__name__}: {run_err}")
 
         if not ok:
-            # Find the actual failure: check for non-200 steps or the last step
+            # Find the actual failure from step logs
             fail_reasons = []
             for s in steps:
                 detail = s.get("detail", "")
-                if detail and "HTTP" in detail and "200" not in detail:
+                if not detail:
+                    continue
+                if "ERROR:" in detail:
                     fail_reasons.append(f"{s['step']}: {detail}")
+                elif "HTTP" in detail and "200" not in detail:
+                    fail_reasons.append(f"{s['step']}: {detail}")
+                elif s["step"] == "exception":
+                    fail_reasons.append(detail)
             if not fail_reasons:
                 if getattr(reg, "xlsx_status", "") == "banned":
                     fail_reasons.append("Account restricted (UFAC/checkpoint)")
