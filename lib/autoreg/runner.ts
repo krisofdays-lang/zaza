@@ -108,18 +108,6 @@ async function runJob(
         const proxy = config.proxies[proxyIdx % config.proxies.length]
         proxyIdx++
 
-        if (i > 0) {
-          const stagger = 1500 + Math.random() * 3000
-          const chunk = 200
-          let waited = 0
-          while (waited < stagger && !isCancelled() && !signal.aborted) {
-            await new Promise((r) => setTimeout(r, Math.min(chunk, stagger - waited)))
-            waited += chunk
-          }
-          if (isCancelled() || signal.aborted) break
-          if (await checkCancelRequested(jobId)) break
-        }
-
         promises.push(
           runSingleRegistration(
             jobId,
@@ -137,7 +125,6 @@ async function runJob(
           ).then((success) => {
             if (success) completed++
             else failed++
-            // Update job counters
             db.update(igAutoregJobs)
               .set({ completed, failed })
               .where(eq(igAutoregJobs.jobId, jobId))
